@@ -1,13 +1,13 @@
 # ==============================================================================
 #                 NSDL WORKSTATION COMPLIANCE AUDIT BACKEND (FASTAPI)
 # ==============================================================================
-# Version: 1.2.0
+# Version: 2.0.0
 
 from fastapi import FastAPI, Query, Request, HTTPException
 from fastapi.responses import FileResponse, Response, PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, validator
-from typing import Union, List
+from typing import Union, List, Optional
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -17,6 +17,9 @@ import json
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import logging
+
+# Resolve project root (one level up from backend/)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Set up logging
 LOGS_DIR = "logs"
@@ -48,8 +51,22 @@ os.makedirs(USER_INFO_DIR, exist_ok=True)
 sessions = {}
 
 # ------------------------------------------------------------------------------
-# 1. PYDANTIC SCHEMA VALIDATION (Highly robust against list coercion issues)
+# 1. PYDANTIC SCHEMA VALIDATION
 # ------------------------------------------------------------------------------
+class HotfixDetail(BaseModel):
+    caption: str = ""
+    cs_name: str = ""
+    description: str = ""
+    fix_id: str = ""
+    installed_on: str = ""
+
+class PrinterDetail(BaseModel):
+    name: str = ""
+    system_name: str = ""
+    enable_bidi: str = "False"
+    extended_printer_status: str = "0"
+    port_name: str = ""
+
 class AuditData(BaseModel):
     computer_name: str
     os_name: str
@@ -59,11 +76,27 @@ class AuditData(BaseModel):
     antivirus: Union[str, List[str]]
     mac_address: str
     drive_name: str
-    printers: Union[str, List[str]]
-    hotfixes: Union[str, List[str]]
+    printers: Union[List[PrinterDetail], List[str], str] = []
+    hotfixes: Union[List[HotfixDetail], List[str], str] = []
 
-    @validator('antivirus', 'printers', 'hotfixes', pre=True, allow_reuse=True)
-    def coerce_list(cls, v):
+    @validator('antivirus', pre=True, allow_reuse=True)
+    def coerce_antivirus(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        return [v]
+
+    @validator('printers', pre=True, allow_reuse=True)
+    def coerce_printers(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return v
+        return [v]
+
+    @validator('hotfixes', pre=True, allow_reuse=True)
+    def coerce_hotfixes(cls, v):
         if v is None:
             return []
         if isinstance(v, list):
@@ -76,7 +109,7 @@ class AuditData(BaseModel):
 @app.get("/")
 def home():
     """Serves the premium audit portal UI."""
-    return FileResponse("frontend/index.html")
+    return FileResponse(os.path.join(BASE_DIR, "frontend", "index.html"))
 
 @app.get("/check-status")
 def check_status(client_id: str = Query(...)):
@@ -89,9 +122,8 @@ def download_script(request: Request, client_id: str = Query(...)):
     """Dynamically serves custom powershell script baked with actual server host url."""
     base_url = str(request.base_url).rstrip('/')
     try:
-        with open("scripts/audit.ps1", "r") as f:
+        with open(os.path.join(BASE_DIR, "scripts", "audit.ps1"), "r") as f:
             script_content = f.read()
-        # Inject dynamic base URL and client_id
         dynamic_script = script_content.replace("http://127.0.0.1:8000", base_url)
         dynamic_script = dynamic_script.replace("CLIENT_ID_PLACEHOLDER", client_id)
         return PlainTextResponse(content=dynamic_script)
@@ -109,8 +141,7 @@ def download_vbs(
 ):
     """Generates silent VBScript launcher running PowerShell scan completely hidden in the background."""
     base_url = str(request.base_url).rstrip('/')
-    
-    # Initialize / cache the session meta properties
+
     sessions[client_id] = {
         "status": "pending",
         "branch_name": branch_name,
@@ -119,7 +150,7 @@ def download_vbs(
         "pdf_path": None,
         "xml_path": None
     }
-    
+
     vbs_content = f"""Set objShell = CreateObject("WScript.Shell")
 command = "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command " & Chr(34) & "Invoke-RestMethod -Uri '{base_url}/download-script?client_id={client_id}' | Invoke-Expression" & Chr(34)
 objShell.Run command, 0, False
@@ -134,16 +165,27 @@ objShell.Run command, 0, False
 # ------------------------------------------------------------------------------
 def draw_page_decorations(canvas, doc):
     canvas.saveState()
-    # Crimson Red border boundary
     canvas.setStrokeColor(colors.HexColor("#A80000"))
     canvas.setLineWidth(1.5)
     canvas.rect(36, 36, doc.pagesize[0] - 72, doc.pagesize[1] - 72)
-    
-    # Center Bold Crimson red inspection label
+
     canvas.setFont('Helvetica-Bold', 8)
     canvas.setFillColor(colors.HexColor("#A80000"))
     canvas.drawCentredString(doc.pagesize[0] / 2.0, 20, "INSPECTION REPORT BY NSDL E-GOVERNANCE")
     canvas.restoreState()
+
+# ------------------------------------------------------------------------------
+# Helper: build a standard 2-col table
+# ------------------------------------------------------------------------------
+def build_table(rows, col_widths=[180, 324]):
+    t = Table(rows, colWidths=col_widths)
+    t.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    return t
 
 # ------------------------------------------------------------------------------
 # 4. COMPLIANCE INGESTION AND EXPORTS (PDF & XML GENERATOR)
@@ -152,9 +194,8 @@ def draw_page_decorations(canvas, doc):
 def upload_audit(data: AuditData, client_id: str = Query(None)):
     cid = client_id or "unknown"
     logger.info(f"Uploading compliance audit for client session ID: {cid}")
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    clean_computer_name = "".join(x for x in data.computer_name if x.isalnum() or x in "._- ")
+
+    timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
     # Load session branch info or fall back to defaults
     session_meta = sessions.get(cid, {})
@@ -162,9 +203,10 @@ def upload_audit(data: AuditData, client_id: str = Query(None)):
     branch_code = session_meta.get("branch_code", "8301231")
     officer_name = session_meta.get("officer_name", "SANDIP BALIRAM LOKHANDE")
 
-    json_path = f"{USER_INFO_DIR}/audit_{cid}_{clean_computer_name}_{timestamp}.json"
-    pdf_path = f"{USER_INFO_DIR}/audit_{cid}_{clean_computer_name}_{timestamp}.pdf"
-    xml_path = f"{USER_INFO_DIR}/audit_{cid}_{clean_computer_name}_{timestamp}.xml"
+    file_prefix = f"{USER_INFO_DIR}/{branch_name}_{timestamp}"
+    json_path = f"{file_prefix}.json"
+    pdf_path = f"{file_prefix}.pdf"
+    xml_path = f"{file_prefix}.xml"
 
     # Save JSON locally
     try:
@@ -173,102 +215,109 @@ def upload_audit(data: AuditData, client_id: str = Query(None)):
     except Exception as e:
         logger.error(f"Failed to save JSON: {e}")
 
-    # Build NSDL Table-Grid formatted ReportLab PDF
+    # Build NSDL Inspection Report PDF (matching sample format)
     try:
         doc = SimpleDocTemplate(pdf_path, pagesize=letter, leftMargin=54, rightMargin=54, topMargin=54, bottomMargin=54)
-        styles = getSampleStyleSheet()
-        
-        # Styles customization
+
         title_style = ParagraphStyle('TitleStyle', fontName='Helvetica-Bold', fontSize=14, leading=16, alignment=1, spaceAfter=20)
-        section_style = ParagraphStyle('SectionStyle', fontName='Helvetica-Bold', fontSize=10, leading=12, spaceBefore=14, spaceAfter=6, textColor=colors.HexColor("#A80000"))
-        cell_style_bold = ParagraphStyle('CellBold', fontName='Helvetica-Bold', fontSize=8, leading=10)
-        cell_style_normal = ParagraphStyle('CellNormal', fontName='Helvetica', fontSize=8, leading=10)
+        section_style = ParagraphStyle('SectionStyle', fontName='Helvetica-Bold', fontSize=10, leading=12, spaceBefore=14, spaceAfter=6)
+        cell_b = ParagraphStyle('CellBold', fontName='Helvetica-Bold', fontSize=8, leading=10)
+        cell_n = ParagraphStyle('CellNormal', fontName='Helvetica', fontSize=8, leading=10)
 
         elements = []
-        
-        # Report Title
-        elements.append(Paragraph("NSDL AUDIT & COMPLIANCE SYSTEM REPORT", title_style))
+
+        # Title
+        elements.append(Paragraph("Inspection Report", title_style))
         elements.append(Spacer(1, 10))
 
-        # --- SECTION 1: BRANCH META ---
-        elements.append(Paragraph("TIN FC BRANCH CONFIGURATION", section_style))
-        audit_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        tinfc_data = [
-            [Paragraph("TIN FC Branch Name", cell_style_bold), Paragraph(branch_name, cell_style_normal)],
-            [Paragraph("TIN FC Branch Code", cell_style_bold), Paragraph(branch_code, cell_style_normal)],
-            [Paragraph("TIN FC Branch Officer Name", cell_style_bold), Paragraph(officer_name, cell_style_normal)],
-            [Paragraph("Audit Date Time", cell_style_bold), Paragraph(audit_time, cell_style_normal)],
-            [Paragraph("Consent Verification Status", cell_style_bold), Paragraph("Verified - Consent Flag Enabled", cell_style_normal)]
+        # --- TINFC Details ---
+        elements.append(Paragraph("TINFC Details", section_style))
+        exec_dt = datetime.now().strftime("%d-%b-%Y_%H:%M:%S")
+        consent_text = ("We provide approval to NSDL e-Governance Infrastructure Ltd.(NSDL e-Gov) "
+                        "to capture the details regarding the System details and share the details with NSDL e-Gov.")
+        tinfc_rows = [
+            [Paragraph("TIN FC Branch Name", cell_b), Paragraph(branch_name, cell_n)],
+            [Paragraph("TIN FC Branch Code", cell_b), Paragraph(branch_code, cell_n)],
+            [Paragraph("TIN FC Branch Officer Name", cell_b), Paragraph(officer_name, cell_n)],
+            [Paragraph("Execution DateTime", cell_b), Paragraph(exec_dt, cell_n)],
+            [Paragraph("Consent", cell_b), Paragraph(consent_text, cell_n)],
         ]
-        tinfc_table = Table(tinfc_data, colWidths=[180, 324])
-        tinfc_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-            ('TOPPADDING', (0,0), (-1,-1), 4),
-        ]))
-        elements.append(tinfc_table)
+        elements.append(build_table(tinfc_rows))
         elements.append(Spacer(1, 12))
 
-        # --- SECTION 2: WORKSTATION INVENTORY ---
-        elements.append(Paragraph("WORKSTATION SYSTEM AUDIT", section_style))
-        av_str = ", ".join(data.antivirus) if isinstance(data.antivirus, list) else data.antivirus
-        sys_data = [
-            [Paragraph("Computer Name", cell_style_bold), Paragraph(data.computer_name, cell_style_normal)],
-            [Paragraph("Operating System", cell_style_bold), Paragraph(data.os_name, cell_style_normal)],
-            [Paragraph("OS Version", cell_style_bold), Paragraph(data.os_version, cell_style_normal)],
-            [Paragraph("System Architecture", cell_style_bold), Paragraph(data.architecture, cell_style_normal)],
-            [Paragraph("License Status Check", cell_style_bold), Paragraph(data.license_status, cell_style_normal)],
-            [Paragraph("Antivirus Products", cell_style_bold), Paragraph(av_str, cell_style_normal)],
-            [Paragraph("Primary MAC Address", cell_style_bold), Paragraph(data.mac_address, cell_style_normal)],
-            [Paragraph("CD/DVD Unit Drive Status", cell_style_bold), Paragraph(data.drive_name, cell_style_normal)]
+        # --- Operating System ---
+        elements.append(Paragraph("Operating System", section_style))
+        os_rows = [
+            [Paragraph("OS Name", cell_b), Paragraph(data.os_name, cell_n)],
+            [Paragraph("OS Version", cell_b), Paragraph(data.os_version, cell_n)],
+            [Paragraph("OS Architecture", cell_b), Paragraph(data.architecture, cell_n)],
+            [Paragraph("CS Name", cell_b), Paragraph(data.computer_name, cell_n)],
+            [Paragraph("LicenseStatus", cell_b), Paragraph(data.license_status, cell_n)],
         ]
-        sys_table = Table(sys_data, colWidths=[180, 324])
-        sys_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-            ('TOPPADDING', (0,0), (-1,-1), 4),
-        ]))
-        elements.append(sys_table)
+        elements.append(build_table(os_rows))
         elements.append(Spacer(1, 12))
 
-        # --- SECTION 3: SYSTEM PRINTERS ---
-        elements.append(Paragraph("CONNECTED WORKSTATION PRINTERS", section_style))
-        printer_rows = []
-        if data.printers:
-            for idx, printer in enumerate(data.printers):
-                printer_rows.append([Paragraph(f"Printer #{idx+1}", cell_style_bold), Paragraph(printer, cell_style_normal)])
-        else:
-            printer_rows.append([Paragraph("No active printers connected", cell_style_bold), Paragraph("-", cell_style_normal)])
-        
-        printer_table = Table(printer_rows, colWidths=[180, 324])
-        printer_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-            ('TOPPADDING', (0,0), (-1,-1), 4),
-        ]))
-        elements.append(printer_table)
-        elements.append(Spacer(1, 12))
-
-        # --- SECTION 4: HOTFIXES ---
-        elements.append(Paragraph("INSTALLED WINDOWS SECURITY UPDATES (HOTFIXES)", section_style))
+        # --- OS Update Details (Hotfixes) ---
+        elements.append(Paragraph("OS Update Details", section_style))
         hotfix_rows = []
         if data.hotfixes:
-            hf_str = ", ".join(data.hotfixes) if isinstance(data.hotfixes, list) else data.hotfixes
-            hotfix_rows.append([Paragraph("Installed updates list", cell_style_bold), Paragraph(hf_str, cell_style_normal)])
+            for idx, hf in enumerate(data.hotfixes):
+                if isinstance(hf, HotfixDetail):
+                    hotfix_rows.append([Paragraph(str(idx + 1), cell_b), Paragraph("", cell_n)])
+                    hotfix_rows.append([Paragraph("Caption", cell_b), Paragraph(hf.caption, cell_n)])
+                    hotfix_rows.append([Paragraph("CS Name", cell_b), Paragraph(hf.cs_name, cell_n)])
+                    hotfix_rows.append([Paragraph("Description", cell_b), Paragraph(hf.description, cell_n)])
+                    hotfix_rows.append([Paragraph("Fix ID", cell_b), Paragraph(hf.fix_id, cell_n)])
+                    hotfix_rows.append([Paragraph("Installed On", cell_b), Paragraph(hf.installed_on, cell_n)])
+                else:
+                    hotfix_rows.append([Paragraph(f"Fix #{idx+1}", cell_b), Paragraph(str(hf), cell_n)])
         else:
-            hotfix_rows.append([Paragraph("No installed hotfixes detected", cell_style_bold), Paragraph("-", cell_style_normal)])
-            
-        hotfix_table = Table(hotfix_rows, colWidths=[180, 324])
-        hotfix_table.setStyle(TableStyle([
-            ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-            ('TOPPADDING', (0,0), (-1,-1), 4),
+            hotfix_rows.append([Paragraph("No installed hotfixes detected", cell_b), Paragraph("-", cell_n)])
+        # Mac address at end of hotfix section (matching sample)
+        hotfix_rows.append([Paragraph("Mac address", cell_b), Paragraph(data.mac_address, cell_n)])
+        elements.append(build_table(hotfix_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- Drive Details ---
+        elements.append(Paragraph("Drive Details", section_style))
+        elements.append(build_table([
+            [Paragraph("DriveName", cell_b), Paragraph(data.drive_name, cell_n)],
         ]))
-        elements.append(hotfix_table)
+        elements.append(Spacer(1, 12))
+
+        # --- Compression utility details ---
+        elements.append(Paragraph("Compression utility details", section_style))
+        elements.append(build_table([
+            [Paragraph("DriveName", cell_b), Paragraph(data.drive_name, cell_n)],
+        ]))
+        elements.append(Spacer(1, 12))
+
+        # --- Antivirus ---
+        elements.append(Paragraph("Antivirus", section_style))
+        av_str = ", ".join(data.antivirus) if isinstance(data.antivirus, list) else data.antivirus
+        elements.append(build_table([
+            [Paragraph("DriveName", cell_b), Paragraph(av_str if av_str else data.drive_name, cell_n)],
+        ]))
+        elements.append(Spacer(1, 12))
+
+        # --- Printer Details ---
+        elements.append(Paragraph("Printer Details", section_style))
+        printer_rows = []
+        if data.printers:
+            for idx, p in enumerate(data.printers):
+                if isinstance(p, PrinterDetail):
+                    printer_rows.append([Paragraph(str(idx + 1), cell_b), Paragraph("", cell_n)])
+                    printer_rows.append([Paragraph("Name", cell_b), Paragraph(p.name, cell_n)])
+                    printer_rows.append([Paragraph("SystemName", cell_b), Paragraph(p.system_name, cell_n)])
+                    printer_rows.append([Paragraph("EnableBIDI", cell_b), Paragraph(p.enable_bidi, cell_n)])
+                    printer_rows.append([Paragraph("ExtendedPrinterStatus", cell_b), Paragraph(p.extended_printer_status, cell_n)])
+                    printer_rows.append([Paragraph("PortName", cell_b), Paragraph(p.port_name, cell_n)])
+                else:
+                    printer_rows.append([Paragraph(f"Printer #{idx+1}", cell_b), Paragraph(str(p), cell_n)])
+            printer_rows.append([Paragraph("Total Printer connected", cell_b), Paragraph(str(len(data.printers)), cell_n)])
+        else:
+            printer_rows.append([Paragraph("No active printers connected", cell_b), Paragraph("-", cell_n)])
+        elements.append(build_table(printer_rows))
 
         doc.build(elements, onFirstPage=draw_page_decorations, onLaterPages=draw_page_decorations)
         logger.info(f"PDF compliance report successfully built: {pdf_path}")
@@ -277,13 +326,13 @@ def upload_audit(data: AuditData, client_id: str = Query(None)):
 
     # Build XML compliance document
     try:
-        root = ET.Element("NsdlComplianceAudit", version="1.2.0")
-        
+        root = ET.Element("NsdlComplianceAudit", version="2.0.0")
+
         meta = ET.SubElement(root, "BranchMetadata")
         ET.SubElement(meta, "BranchName").text = branch_name
         ET.SubElement(meta, "BranchCode").text = branch_code
         ET.SubElement(meta, "OfficerName").text = officer_name
-        
+
         sys_xml = ET.SubElement(root, "WorkstationInventory")
         ET.SubElement(sys_xml, "ComputerName").text = data.computer_name
         ET.SubElement(sys_xml, "OSName").text = data.os_name
@@ -293,6 +342,26 @@ def upload_audit(data: AuditData, client_id: str = Query(None)):
         ET.SubElement(sys_xml, "Antivirus").text = av_str
         ET.SubElement(sys_xml, "MacAddress").text = data.mac_address
         ET.SubElement(sys_xml, "CdRomDrive").text = data.drive_name
+
+        hf_xml = ET.SubElement(root, "Hotfixes")
+        for hf in data.hotfixes:
+            if isinstance(hf, HotfixDetail):
+                hf_el = ET.SubElement(hf_xml, "Hotfix")
+                ET.SubElement(hf_el, "Caption").text = hf.caption
+                ET.SubElement(hf_el, "CSName").text = hf.cs_name
+                ET.SubElement(hf_el, "Description").text = hf.description
+                ET.SubElement(hf_el, "FixID").text = hf.fix_id
+                ET.SubElement(hf_el, "InstalledOn").text = hf.installed_on
+
+        pr_xml = ET.SubElement(root, "Printers")
+        for p in data.printers:
+            if isinstance(p, PrinterDetail):
+                p_el = ET.SubElement(pr_xml, "Printer")
+                ET.SubElement(p_el, "Name").text = p.name
+                ET.SubElement(p_el, "SystemName").text = p.system_name
+                ET.SubElement(p_el, "EnableBIDI").text = p.enable_bidi
+                ET.SubElement(p_el, "ExtendedPrinterStatus").text = p.extended_printer_status
+                ET.SubElement(p_el, "PortName").text = p.port_name
 
         tree = ET.ElementTree(root)
         tree.write(xml_path, encoding="utf-8", xml_declaration=True)
@@ -326,12 +395,12 @@ def download_report(client_id: str = Query(...), format: str = Query("pdf")):
         if not file_path or not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="PDF report does not exist on disk.")
         return FileResponse(file_path, media_type="application/pdf", filename=os.path.basename(file_path))
-    
+
     elif format.lower() == "xml":
         file_path = session.get("xml_path")
         if not file_path or not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="XML report does not exist on disk.")
         return FileResponse(file_path, media_type="application/xml", filename=os.path.basename(file_path))
-    
+
     else:
         raise HTTPException(status_code=400, detail="Invalid report format. Use 'pdf' or 'xml'.")

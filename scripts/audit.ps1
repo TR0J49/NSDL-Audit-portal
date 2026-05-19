@@ -1,7 +1,7 @@
 # ==============================================================================
 #                 NSDL WORKSTATION COMPLIANCE AUDIT SCRIPT
 # ==============================================================================
-# Version: 1.2.0
+# Version: 2.0.0
 
 Write-Host "Collecting Workstation Compliance Data..." -ForegroundColor Green
 
@@ -52,7 +52,6 @@ if ($antivirus.Count -eq 0) {
 $mac = "Unknown"
 try {
     $mac = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1 -ExpandProperty MacAddress
-    # Clean MAC format (remove colons or dashes if present, make uppercase)
     $mac = ($mac -replace '[:-]', '').ToUpper()
 } catch {}
 
@@ -65,16 +64,38 @@ try {
     }
 } catch {}
 
-# 7. Connected Printers
+# 7. Connected Printers (detailed)
 $printers = @()
 try {
-    $printers = Get-Printer | Select-Object -ExpandProperty Name
+    $printerObjects = Get-CimInstance Win32_Printer
+    foreach ($p in $printerObjects) {
+        $printers += @{
+            name = if ($p.Name) { $p.Name } else { "Unknown" }
+            system_name = if ($p.SystemName) { $p.SystemName } else { $computer }
+            enable_bidi = if ($p.EnableBIDI) { "True" } else { "False" }
+            extended_printer_status = if ($p.ExtendedPrinterStatus) { [string]$p.ExtendedPrinterStatus } else { "0" }
+            port_name = if ($p.PortName) { $p.PortName } else { "Unknown" }
+        }
+    }
 } catch {}
 
-# 8. Installed Hotfixes
+# 8. Installed Hotfixes (detailed)
 $hotfixes = @()
 try {
-    $hotfixes = Get-HotFix | Select-Object -ExpandProperty HotFixID
+    $hfObjects = Get-HotFix
+    foreach ($hf in $hfObjects) {
+        $installedOn = ""
+        if ($hf.InstalledOn) {
+            $installedOn = $hf.InstalledOn.ToString("M/d/yyyy")
+        }
+        $hotfixes += @{
+            caption = if ($hf.Caption) { $hf.Caption } else { "" }
+            cs_name = if ($hf.CSName) { $hf.CSName } else { $computer }
+            description = if ($hf.Description) { $hf.Description } else { "" }
+            fix_id = if ($hf.HotFixID) { $hf.HotFixID } else { "" }
+            installed_on = $installedOn
+        }
+    }
 } catch {}
 
 # 9. Construct JSON Data payload
