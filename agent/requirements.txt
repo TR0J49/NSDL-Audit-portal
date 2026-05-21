@@ -1,0 +1,6 @@
+psutil==5.9.7
+wmi==1.5.1
+pywin32==306
+requests==2.31.0
+customtkinter==5.2.1
+pyinstaller==6.3.0
