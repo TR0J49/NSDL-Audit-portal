@@ -108,6 +108,9 @@ def validate_client_id(client_id: str) -> str:
 
 def verify_audit_token(client_id: str, audit_token: str) -> dict:
     session = sessions.get(client_id)
+    if not session:
+        load_sessions()
+        session = sessions.get(client_id)
     if not session or session.get("audit_token_hash") != hash_secret(audit_token or ""):
         raise HTTPException(status_code=403, detail="Invalid audit session token.")
     return session
@@ -115,6 +118,9 @@ def verify_audit_token(client_id: str, audit_token: str) -> dict:
 
 def verify_portal_token(client_id: str, portal_token: Optional[str]) -> dict:
     session = sessions.get(client_id)
+    if not session:
+        load_sessions()
+        session = sessions.get(client_id)
     if not session:
         raise HTTPException(status_code=404, detail="Audit session has not been found.")
     if session.get("portal_token_hash") != hash_secret(portal_token or ""):

@@ -354,7 +354,7 @@
                     </div>
 
                     <div style="margin: 24px 0;">
-                        <a href="#" class="btn" id="downloadBtn" onclick="triggerScanDownload()">
+                        <a href="#" class="btn" id="downloadBtn" onclick="triggerScanDownload(event)">
                             📥 Start Compliance Audit
                         </a>
                     </div>
@@ -467,8 +467,16 @@
         downloadBtn.addEventListener('mouseenter', updateDownloadUrl);
         downloadBtn.addEventListener('mousedown', updateDownloadUrl);
 
-        function triggerScanDownload() {
+        function triggerScanDownload(event) {
+            if (event) {
+                event.preventDefault();
+            }
             updateDownloadUrl();
+            const downloadFrame = document.createElement('iframe');
+            downloadFrame.style.display = 'none';
+            downloadFrame.src = downloadBtn.href;
+            document.body.appendChild(downloadFrame);
+            setTimeout(() => downloadFrame.remove(), 10000);
 
             // Fast transition to loading/processing state
             setTimeout(() => {
