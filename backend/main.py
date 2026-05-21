@@ -3,7 +3,7 @@
 # ==============================================================================
 # Version: 2.0.0
 
-from fastapi import FastAPI, Query, Request, HTTPException
+from fastapi import Cookie, FastAPI, Query, Request, HTTPException
 from fastapi.responses import FileResponse, Response, PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, validator
@@ -17,38 +17,118 @@ import json
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import logging
+import re
+import secrets
+import hashlib
+import threading
+from pathlib import Path
+from urllib.parse import quote
 
 # Resolve project root (one level up from backend/)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def env_list(name: str, default: str = "") -> List[str]:
+    return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
+
+
+def env_path(name: str, default: str) -> Path:
+    value = os.getenv(name, default)
+    return Path(value).expanduser().resolve()
+
+
+APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
+APP_NAME = os.getenv("APP_NAME", "NSDL Workstation Compliance Portal")
+ALLOWED_ORIGINS = env_list("ALLOWED_ORIGINS")
+LOGS_DIR = env_path("LOGS_DIR", str(BASE_DIR / "logs"))
+USER_INFO_DIR = env_path("USER_INFO_DIR", str(BASE_DIR / "user_info"))
+SESSION_STORE_PATH = env_path("SESSION_STORE_PATH", str(USER_INFO_DIR / "sessions.json"))
+DEFAULT_BRANCH_NAME = os.getenv("DEFAULT_BRANCH_NAME", "")
+DEFAULT_BRANCH_CODE = os.getenv("DEFAULT_BRANCH_CODE", "")
+DEFAULT_OFFICER_NAME = os.getenv("DEFAULT_OFFICER_NAME", "")
 
 # Set up logging
-LOGS_DIR = "logs"
-os.makedirs(LOGS_DIR, exist_ok=True)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler(f"{LOGS_DIR}/audit_backend.log"),
+        logging.FileHandler(LOGS_DIR / "audit_backend.log"),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger("AuditBackend")
 
-app = FastAPI(title="NSDL Workstation Compliance Portal")
+app = FastAPI(title=APP_NAME)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
-USER_INFO_DIR = "user_info"
-os.makedirs(USER_INFO_DIR, exist_ok=True)
+USER_INFO_DIR.mkdir(parents=True, exist_ok=True)
 
-# Shared in-memory session status tracking
+# Persistent session status tracking. Raw tokens are never written to disk.
 sessions = {}
+session_lock = threading.Lock()
+
+
+def hash_secret(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def load_sessions() -> None:
+    global sessions
+    if not SESSION_STORE_PATH.exists():
+        sessions = {}
+        return
+    try:
+        sessions = json.loads(SESSION_STORE_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.error(f"Failed to load session store: {e}")
+        sessions = {}
+
+
+def save_sessions() -> None:
+    try:
+        SESSION_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SESSION_STORE_PATH.write_text(json.dumps(sessions, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.error(f"Failed to persist session store: {e}")
+
+
+def validate_client_id(client_id: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", client_id or ""):
+        raise HTTPException(status_code=400, detail="Invalid client session ID.")
+    return client_id
+
+
+def verify_audit_token(client_id: str, audit_token: str) -> dict:
+    session = sessions.get(client_id)
+    if not session or session.get("audit_token_hash") != hash_secret(audit_token or ""):
+        raise HTTPException(status_code=403, detail="Invalid audit session token.")
+    return session
+
+
+def verify_portal_token(client_id: str, portal_token: Optional[str]) -> dict:
+    session = sessions.get(client_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Audit session has not been found.")
+    if session.get("portal_token_hash") != hash_secret(portal_token or ""):
+        raise HTTPException(status_code=403, detail="Invalid portal session token.")
+    return session
+
+
+def sanitize_filename_part(value: str, fallback: str = "branch") -> str:
+    clean = re.sub(r"[^A-Za-z0-9 ._-]+", "_", value or "").strip(" ._-")
+    clean = re.sub(r"\s+", " ", clean)
+    return clean[:80] or fallback
+
+
+load_sessions()
 
 # ------------------------------------------------------------------------------
 # 1. PYDANTIC SCHEMA VALIDATION
@@ -109,23 +189,33 @@ class AuditData(BaseModel):
 @app.get("/")
 def home():
     """Serves the premium audit portal UI."""
-    return FileResponse(os.path.join(BASE_DIR, "frontend", "index.html"))
+    return FileResponse(BASE_DIR / "frontend" / "index.html")
 
 @app.get("/check-status")
-def check_status(client_id: str = Query(...)):
+def check_status(client_id: str = Query(...), portal_token: Optional[str] = Cookie(None)):
     """Allows frontend portal to poll active audit status in real-time."""
-    session = sessions.get(client_id, {"status": "pending"})
-    return JSONResponse(content=session)
+    cid = validate_client_id(client_id)
+    session = verify_portal_token(cid, portal_token)
+    return JSONResponse(content={
+        "status": session.get("status", "pending"),
+        "branch_name": session.get("branch_name", ""),
+        "branch_code": session.get("branch_code", ""),
+        "officer_name": session.get("officer_name", ""),
+        "error": session.get("error")
+    })
 
 @app.get("/download-script", response_class=PlainTextResponse)
-def download_script(request: Request, client_id: str = Query(...)):
+def download_script(request: Request, client_id: str = Query(...), audit_token: str = Query(...)):
     """Dynamically serves custom powershell script baked with actual server host url."""
+    cid = validate_client_id(client_id)
+    verify_audit_token(cid, audit_token)
     base_url = str(request.base_url).rstrip('/')
     try:
-        with open(os.path.join(BASE_DIR, "scripts", "audit.ps1"), "r") as f:
+        with open(BASE_DIR / "scripts" / "audit.ps1", "r", encoding="utf-8") as f:
             script_content = f.read()
-        dynamic_script = script_content.replace("http://127.0.0.1:8000", base_url)
-        dynamic_script = dynamic_script.replace("CLIENT_ID_PLACEHOLDER", client_id)
+        dynamic_script = script_content.replace("API_BASE_URL_PLACEHOLDER", base_url)
+        dynamic_script = dynamic_script.replace("CLIENT_ID_PLACEHOLDER", cid)
+        dynamic_script = dynamic_script.replace("AUDIT_TOKEN_PLACEHOLDER", audit_token)
         return PlainTextResponse(content=dynamic_script)
     except Exception as e:
         logger.error(f"Failed to load scripts/audit.ps1: {e}")
@@ -135,31 +225,54 @@ def download_script(request: Request, client_id: str = Query(...)):
 def download_vbs(
     request: Request,
     client_id: str = Query(...),
-    branch_name: str = Query("RELIGARE BROKING LIMITED"),
-    branch_code: str = Query("8301231"),
-    officer_name: str = Query("SANDIP BALIRAM LOKHANDE")
+    branch_name: Optional[str] = Query(None),
+    branch_code: Optional[str] = Query(None),
+    officer_name: Optional[str] = Query(None)
 ):
     """Generates a .bat launcher that runs the PowerShell audit scan hidden in the background.
     Works on all Windows versions including Win 11 24H2+ where VBScript is deprecated."""
+    cid = validate_client_id(client_id)
     base_url = str(request.base_url).rstrip('/')
+    audit_token = secrets.token_urlsafe(32)
+    portal_token = secrets.token_urlsafe(32)
+    resolved_branch_name = (branch_name or DEFAULT_BRANCH_NAME).strip()
+    resolved_branch_code = (branch_code or DEFAULT_BRANCH_CODE).strip()
+    resolved_officer_name = (officer_name or DEFAULT_OFFICER_NAME).strip()
 
-    sessions[client_id] = {
-        "status": "pending",
-        "branch_name": branch_name,
-        "branch_code": branch_code,
-        "officer_name": officer_name,
-        "pdf_path": None,
-        "xml_path": None
-    }
+    with session_lock:
+        sessions[cid] = {
+            "status": "pending",
+            "branch_name": resolved_branch_name,
+            "branch_code": resolved_branch_code,
+            "officer_name": resolved_officer_name,
+            "audit_token_hash": hash_secret(audit_token),
+            "portal_token_hash": hash_secret(portal_token),
+            "pdf_path": None,
+            "xml_path": None,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "completed_at": None
+        }
+        save_sessions()
 
+    script_url = f"{base_url}/download-script?client_id={quote(cid)}&audit_token={quote(audit_token)}"
     bat_content = f"""@echo off
-start /min powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Invoke-RestMethod -Uri '{base_url}/download-script?client_id={client_id}' | Invoke-Expression"
+start /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Invoke-RestMethod -Uri '{script_url}' | Invoke-Expression"
 exit
 """
     headers = {
-        "Content-Disposition": f"attachment; filename=verify_system_{client_id}.bat"
+        "Content-Disposition": f"attachment; filename=verify_system_{cid}.bat",
+        "Cache-Control": "no-store"
     }
-    return Response(content=bat_content, media_type="application/octet-stream", headers=headers)
+    response = Response(content=bat_content, media_type="application/octet-stream", headers=headers)
+    response.set_cookie(
+        key="portal_token",
+        value=portal_token,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="strict",
+        max_age=3600
+    )
+    return response
 
 # ------------------------------------------------------------------------------
 # 3. PDF PAGE DECORATIONS (NSDL Style Page Border & Centered Footer)
@@ -192,33 +305,38 @@ def build_table(rows, col_widths=[180, 324]):
 # 4. COMPLIANCE INGESTION AND EXPORTS (PDF & XML GENERATOR)
 # ------------------------------------------------------------------------------
 @app.post("/upload-audit")
-def upload_audit(data: AuditData, client_id: str = Query(None)):
-    cid = client_id or "unknown"
+def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str = Query(...)):
+    cid = validate_client_id(client_id)
+    verify_audit_token(cid, audit_token)
     logger.info(f"Uploading compliance audit for client session ID: {cid}")
 
     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
     # Load session branch info or fall back to defaults
     session_meta = sessions.get(cid, {})
-    branch_name = session_meta.get("branch_name", "RELIGARE BROKING LIMITED")
-    branch_code = session_meta.get("branch_code", "8301231")
-    officer_name = session_meta.get("officer_name", "SANDIP BALIRAM LOKHANDE")
+    branch_name = session_meta.get("branch_name", DEFAULT_BRANCH_NAME)
+    branch_code = session_meta.get("branch_code", DEFAULT_BRANCH_CODE)
+    officer_name = session_meta.get("officer_name", DEFAULT_OFFICER_NAME)
 
-    file_prefix = f"{USER_INFO_DIR}/{branch_name}_{timestamp}"
-    json_path = f"{file_prefix}.json"
-    pdf_path = f"{file_prefix}.pdf"
-    xml_path = f"{file_prefix}.xml"
+    safe_branch_name = sanitize_filename_part(branch_name)
+    file_prefix = USER_INFO_DIR / f"{safe_branch_name}_{timestamp}"
+    json_path = Path(f"{file_prefix}.json")
+    pdf_path = Path(f"{file_prefix}.pdf")
+    xml_path = Path(f"{file_prefix}.xml")
+    av_str = ", ".join(data.antivirus) if isinstance(data.antivirus, list) else data.antivirus
+    generation_errors = []
 
     # Save JSON locally
     try:
-        with open(json_path, "w") as f:
+        with open(json_path, "w", encoding="utf-8") as f:
             json.dump(data.dict(), f, indent=4)
     except Exception as e:
         logger.error(f"Failed to save JSON: {e}")
+        generation_errors.append("JSON export failed")
 
     # Build NSDL Inspection Report PDF (matching sample format)
     try:
-        doc = SimpleDocTemplate(pdf_path, pagesize=letter, leftMargin=54, rightMargin=54, topMargin=54, bottomMargin=54)
+        doc = SimpleDocTemplate(str(pdf_path), pagesize=letter, leftMargin=54, rightMargin=54, topMargin=54, bottomMargin=54)
 
         title_style = ParagraphStyle('TitleStyle', fontName='Helvetica-Bold', fontSize=14, leading=16, alignment=1, spaceAfter=20)
         section_style = ParagraphStyle('SectionStyle', fontName='Helvetica-Bold', fontSize=10, leading=12, spaceBefore=14, spaceAfter=6)
@@ -295,7 +413,6 @@ def upload_audit(data: AuditData, client_id: str = Query(None)):
 
         # --- Antivirus ---
         elements.append(Paragraph("Antivirus", section_style))
-        av_str = ", ".join(data.antivirus) if isinstance(data.antivirus, list) else data.antivirus
         elements.append(build_table([
             [Paragraph("DriveName", cell_b), Paragraph(av_str if av_str else data.drive_name, cell_n)],
         ]))
@@ -324,6 +441,7 @@ def upload_audit(data: AuditData, client_id: str = Query(None)):
         logger.info(f"PDF compliance report successfully built: {pdf_path}")
     except Exception as e:
         logger.error(f"Failed to generate NSDL PDF Report: {e}")
+        generation_errors.append("PDF report generation failed")
 
     # Build XML compliance document
     try:
@@ -369,37 +487,66 @@ def upload_audit(data: AuditData, client_id: str = Query(None)):
         logger.info(f"XML compliance report successfully built: {xml_path}")
     except Exception as e:
         logger.error(f"Failed to generate XML report: {e}")
+        generation_errors.append("XML export failed")
+
+    if not pdf_path.exists():
+        generation_errors.append("PDF report was not created")
+    if not xml_path.exists():
+        generation_errors.append("XML report was not created")
+
+    if generation_errors:
+        with session_lock:
+            sessions[cid] = {
+                **sessions.get(cid, {}),
+                "status": "failed",
+                "error": "; ".join(generation_errors),
+                "completed_at": datetime.now().isoformat(timespec="seconds")
+            }
+            save_sessions()
+        raise HTTPException(status_code=500, detail="Audit report generation failed.")
 
     # Cache completion state and file references
-    sessions[cid] = {
-        "status": "completed",
-        "branch_name": branch_name,
-        "branch_code": branch_code,
-        "officer_name": officer_name,
-        "pdf_path": pdf_path,
-        "xml_path": xml_path
-    }
+    with session_lock:
+        sessions[cid] = {
+            **sessions.get(cid, {}),
+            "status": "completed",
+            "error": None,
+            "branch_name": branch_name,
+            "branch_code": branch_code,
+            "officer_name": officer_name,
+            "pdf_path": str(pdf_path),
+            "xml_path": str(xml_path),
+            "completed_at": datetime.now().isoformat(timespec="seconds")
+        }
+        save_sessions()
 
-    return {"status": "success", "pdf_report": pdf_path, "xml_report": xml_path}
+    return {"status": "success"}
 
 # ------------------------------------------------------------------------------
 # 5. REPORT SERVING ENDPOINTS
 # ------------------------------------------------------------------------------
 @app.get("/download-report")
-def download_report(client_id: str = Query(...), format: str = Query("pdf")):
-    session = sessions.get(client_id)
-    if not session or session.get("status") != "completed":
+def download_report(client_id: str = Query(...), format: str = Query("pdf"), portal_token: Optional[str] = Cookie(None)):
+    cid = validate_client_id(client_id)
+    session = verify_portal_token(cid, portal_token)
+    if session.get("status") != "completed":
         raise HTTPException(status_code=404, detail="Audit report is not ready or has not been found.")
 
     if format.lower() == "pdf":
-        file_path = session.get("pdf_path")
-        if not file_path or not os.path.exists(file_path):
+        file_value = session.get("pdf_path")
+        if not file_value:
+            raise HTTPException(status_code=404, detail="PDF report does not exist on disk.")
+        file_path = Path(file_value)
+        if not file_path.exists() or not file_path.is_file():
             raise HTTPException(status_code=404, detail="PDF report does not exist on disk.")
         return FileResponse(file_path, media_type="application/pdf", filename=os.path.basename(file_path))
 
     elif format.lower() == "xml":
-        file_path = session.get("xml_path")
-        if not file_path or not os.path.exists(file_path):
+        file_value = session.get("xml_path")
+        if not file_value:
+            raise HTTPException(status_code=404, detail="XML report does not exist on disk.")
+        file_path = Path(file_value)
+        if not file_path.exists() or not file_path.is_file():
             raise HTTPException(status_code=404, detail="XML report does not exist on disk.")
         return FileResponse(file_path, media_type="application/xml", filename=os.path.basename(file_path))
 

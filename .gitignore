@@ -1,9 +1,36 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+!backend/.env.example
+
+# Generated audit output and logs
 reports/
 logs/
 user_info/
+*.log
+audit_*.pdf
+*_20*_*.pdf
+
+# Local scripts and deployment scratch files
 push_to_github.ps1
-.env
-venv/
-.venv/
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

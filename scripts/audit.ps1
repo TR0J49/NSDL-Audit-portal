@@ -116,9 +116,10 @@ $json = $data | ConvertTo-Json -Depth 5
 
 # Capture dynamic client id parameter from filename if injected
 $client_id = "CLIENT_ID_PLACEHOLDER"
+$audit_token = "AUDIT_TOKEN_PLACEHOLDER"
 
 # API URL (dynamically replaced by backend during serving)
-$apiUrl = "http://127.0.0.1:8000/upload-audit?client_id=$client_id"
+$apiUrl = "API_BASE_URL_PLACEHOLDER/upload-audit?client_id=$client_id&audit_token=$audit_token"
 
 Write-Host "Uploading secure payload to backend..." -ForegroundColor Yellow
 try {

@@ -341,15 +341,15 @@
                         <div class="form-box-title">📋 TIN FC Branch Configuration</div>
                         <div class="input-group">
                             <label for="branchName">TIN FC Branch Name</label>
-                            <input type="text" id="branchName" class="input-field" placeholder="e.g. RELIGARE BROKING LIMITED" value="RELIGARE BROKING LIMITED">
+                            <input type="text" id="branchName" class="input-field" placeholder="Enter TIN FC branch name" value="">
                         </div>
                         <div class="input-group">
                             <label for="branchCode">TIN FC Branch Code</label>
-                            <input type="text" id="branchCode" class="input-field" placeholder="e.g. 8301231" value="8301231">
+                            <input type="text" id="branchCode" class="input-field" placeholder="Enter TIN FC branch code" value="">
                         </div>
                         <div class="input-group">
                             <label for="officerName">Branch Officer Name</label>
-                            <input type="text" id="officerName" class="input-field" placeholder="e.g. SANDIP BALIRAM LOKHANDE" value="SANDIP BALIRAM LOKHANDE">
+                            <input type="text" id="officerName" class="input-field" placeholder="Enter branch officer name" value="">
                         </div>
                     </div>
 
@@ -516,9 +516,15 @@
                         if (data.status === 'completed') {
                             clearInterval(pollInterval);
                             showSuccessState();
+                        } else if (data.status === 'failed') {
+                            clearInterval(pollInterval);
+                            document.getElementById('statusText').innerText = 'Audit Failed';
+                            document.getElementById('statusBadge').style.background = 'rgba(168, 0, 0, 0.15)';
+                            document.getElementById('statusBadge').style.borderColor = 'rgba(168, 0, 0, 0.3)';
+                            document.getElementById('statusBadge').style.color = '#f87171';
                         }
                     })
-                    .catch(err => logger.error('Polling error:', err));
+                    .catch(err => console.error('Polling error:', err));
             }, 2000);
         }
 
