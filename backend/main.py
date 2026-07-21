@@ -1,5 +1,5 @@
 # ==============================================================================
-#                 NSDL WORKSTATION COMPLIANCE AUDIT BACKEND (FASTAPI)
+#                 InfraPulse WORKSTATION COMPLIANCE AUDIT BACKEND (FASTAPI)
 # ==============================================================================
 # Version: 2.0.0
 
@@ -38,7 +38,7 @@ def env_path(name: str, default: str) -> Path:
 
 
 APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
-APP_NAME = os.getenv("APP_NAME", "NSDL Workstation Compliance Portal")
+APP_NAME = os.getenv("APP_NAME", "InfraPulse Workstation Compliance Portal")
 ALLOWED_ORIGINS = env_list("ALLOWED_ORIGINS")
 LOGS_DIR = env_path("LOGS_DIR", str(BASE_DIR / "logs"))
 USER_INFO_DIR = env_path("USER_INFO_DIR", str(BASE_DIR / "user_info"))
@@ -153,6 +153,16 @@ class PrinterDetail(BaseModel):
     extended_printer_status: str = "0"
     port_name: str = ""
 
+class NetworkAdapter(BaseModel):
+    name: str = ""
+    mac_address: str = ""
+    ip_address: str = ""
+    subnet_mask: str = ""
+    default_gateway: str = ""
+    dhcp_enabled: str = "False"
+    dhcp_server: str = ""
+    dns_servers: str = ""
+
 class AuditData(BaseModel):
     computer_name: str
     os_name: str
@@ -164,29 +174,42 @@ class AuditData(BaseModel):
     drive_name: str
     printers: Union[List[PrinterDetail], List[str], str] = []
     hotfixes: Union[List[HotfixDetail], List[str], str] = []
+    network_adapters: Union[List[NetworkAdapter], List[str], str] = []
+    # systeminfo fields
+    system_manufacturer: str = ""
+    system_model: str = ""
+    processor: str = ""
+    total_physical_memory: str = ""
+    bios_version: str = ""
+    domain: str = ""
+    logon_server: str = ""
+    system_boot_time: str = ""
+    time_zone: str = ""
+    registered_owner: str = ""
+    windows_directory: str = ""
 
     @validator('antivirus', pre=True, allow_reuse=True)
     def coerce_antivirus(cls, v):
-        if v is None:
-            return []
-        if isinstance(v, list):
-            return v
+        if v is None: return []
+        if isinstance(v, list): return v
         return [v]
 
     @validator('printers', pre=True, allow_reuse=True)
     def coerce_printers(cls, v):
-        if v is None:
-            return []
-        if isinstance(v, list):
-            return v
+        if v is None: return []
+        if isinstance(v, list): return v
         return [v]
 
     @validator('hotfixes', pre=True, allow_reuse=True)
     def coerce_hotfixes(cls, v):
-        if v is None:
-            return []
-        if isinstance(v, list):
-            return v
+        if v is None: return []
+        if isinstance(v, list): return v
+        return [v]
+
+    @validator('network_adapters', pre=True, allow_reuse=True)
+    def coerce_network_adapters(cls, v):
+        if v is None: return []
+        if isinstance(v, list): return v
         return [v]
 
 # ------------------------------------------------------------------------------
@@ -210,22 +233,40 @@ def check_status(client_id: str = Query(...), portal_token: Optional[str] = Cook
         "error": session.get("error")
     })
 
+def detect_client_os(user_agent: str) -> str:
+    """Returns 'windows', 'mac', or 'linux' based on User-Agent string."""
+    ua = (user_agent or "").lower()
+    if "mac" in ua or "darwin" in ua:
+        return "mac"
+    if "linux" in ua:
+        return "linux"
+    return "windows"
+
+
 @app.get("/download-script", response_class=PlainTextResponse)
 def download_script(request: Request, client_id: str = Query(...), audit_token: str = Query(...)):
-    """Dynamically serves custom powershell script baked with actual server host url."""
+    """Dynamically serves the audit script (PowerShell or Bash) baked with server URL and tokens."""
     cid = validate_client_id(client_id)
     verify_audit_token(cid, audit_token)
     base_url = str(request.base_url).rstrip('/')
+    session_meta = sessions.get(cid, {})
+    client_os = session_meta.get("client_os", "windows")
+
+    if client_os in ("linux", "mac"):
+        script_file = BASE_DIR / "scripts" / "audit.sh"
+    else:
+        script_file = BASE_DIR / "scripts" / "audit.ps1"
+
     try:
-        with open(BASE_DIR / "scripts" / "audit.ps1", "r", encoding="utf-8") as f:
+        with open(script_file, "r", encoding="utf-8") as f:
             script_content = f.read()
         dynamic_script = script_content.replace("API_BASE_URL_PLACEHOLDER", base_url)
         dynamic_script = dynamic_script.replace("CLIENT_ID_PLACEHOLDER", cid)
         dynamic_script = dynamic_script.replace("AUDIT_TOKEN_PLACEHOLDER", audit_token)
         return PlainTextResponse(content=dynamic_script)
     except Exception as e:
-        logger.error(f"Failed to load scripts/audit.ps1: {e}")
-        raise HTTPException(status_code=500, detail="PowerShell script source unavailable.")
+        logger.error(f"Failed to load audit script ({script_file.name}): {e}")
+        raise HTTPException(status_code=500, detail="Audit script source unavailable.")
 
 @app.get("/download-vbs")
 def download_vbs(
@@ -233,10 +274,13 @@ def download_vbs(
     client_id: str = Query(...),
     branch_name: Optional[str] = Query(None),
     branch_code: Optional[str] = Query(None),
-    officer_name: Optional[str] = Query(None)
+    officer_name: Optional[str] = Query(None),
+    os: Optional[str] = Query(None)
 ):
-    """Generates a .bat launcher that runs the PowerShell audit scan hidden in the background.
-    Works on all Windows versions including Win 11 24H2+ where VBScript is deprecated."""
+    """Generates a launcher script appropriate for the client OS:
+    - Windows → .bat (runs PowerShell silently)
+    - Linux/Mac → .sh (runs bash via curl)
+    """
     cid = validate_client_id(client_id)
     base_url = str(request.base_url).rstrip('/')
     audit_token = secrets.token_urlsafe(32)
@@ -245,9 +289,15 @@ def download_vbs(
     resolved_branch_code = (branch_code or DEFAULT_BRANCH_CODE).strip()
     resolved_officer_name = (officer_name or DEFAULT_OFFICER_NAME).strip()
 
+    user_agent = request.headers.get("user-agent", "")
+    client_os = os.lower() if os else detect_client_os(user_agent)
+    if client_os not in ("windows", "linux", "mac"):
+        client_os = "windows"
+
     with session_lock:
         sessions[cid] = {
             "status": "pending",
+            "client_os": client_os,
             "branch_name": resolved_branch_name,
             "branch_code": resolved_branch_code,
             "officer_name": resolved_officer_name,
@@ -261,15 +311,26 @@ def download_vbs(
         save_sessions()
 
     script_url = f"{base_url}/download-script?client_id={quote(cid)}&audit_token={quote(audit_token)}"
-    bat_content = f"""@echo off
+
+    if client_os in ("linux", "mac"):
+        launcher_content = f"""#!/bin/bash
+curl -fsSL '{script_url}' | bash
+"""
+        filename = f"verify_system_{cid}.sh"
+        media_type = "application/x-sh"
+    else:
+        launcher_content = f"""@echo off
 start /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Invoke-RestMethod -Uri '{script_url}' | Invoke-Expression"
 exit
 """
+        filename = f"verify_system_{cid}.bat"
+        media_type = "application/octet-stream"
+
     headers = {
-        "Content-Disposition": f"attachment; filename=verify_system_{cid}.bat",
+        "Content-Disposition": f"attachment; filename={filename}",
         "Cache-Control": "no-store"
     }
-    response = Response(content=bat_content, media_type="application/octet-stream", headers=headers)
+    response = Response(content=launcher_content, media_type=media_type, headers=headers)
     response.set_cookie(
         key="portal_token",
         value=portal_token,
@@ -281,7 +342,7 @@ exit
     return response
 
 # ------------------------------------------------------------------------------
-# 3. PDF PAGE DECORATIONS (NSDL Style Page Border & Centered Footer)
+# 3. PDF PAGE DECORATIONS (InfraPulse Style Page Border & Centered Footer)
 # ------------------------------------------------------------------------------
 def draw_page_decorations(canvas, doc):
     canvas.saveState()
@@ -291,7 +352,7 @@ def draw_page_decorations(canvas, doc):
 
     canvas.setFont('Helvetica-Bold', 8)
     canvas.setFillColor(colors.HexColor("#A80000"))
-    canvas.drawCentredString(doc.pagesize[0] / 2.0, 20, "INSPECTION REPORT BY NSDL E-GOVERNANCE")
+    canvas.drawCentredString(doc.pagesize[0] / 2.0, 20, "INSPECTION REPORT BY InfraPulse")
     canvas.restoreState()
 
 # ------------------------------------------------------------------------------
@@ -340,7 +401,7 @@ def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str 
         logger.error(f"Failed to save JSON: {e}")
         generation_errors.append("JSON export failed")
 
-    # Build NSDL Inspection Report PDF (matching sample format)
+    # Build InfraPulse Inspection Report PDF (matching sample format)
     try:
         doc = SimpleDocTemplate(str(pdf_path), pagesize=letter, leftMargin=54, rightMargin=54, topMargin=54, bottomMargin=54)
 
@@ -358,8 +419,8 @@ def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str 
         # --- TINFC Details ---
         elements.append(Paragraph("TINFC Details", section_style))
         exec_dt = datetime.now().strftime("%d-%b-%Y_%H:%M:%S")
-        consent_text = ("We provide approval to NSDL e-Governance Infrastructure Ltd.(NSDL e-Gov) "
-                        "to capture the details regarding the System details and share the details with NSDL e-Gov.")
+        consent_text = ("We provide approval to InfraPulse Infrastructure Ltd.(InfraPulse) "
+                        "to capture the details regarding the System details and share the details with InfraPulse.")
         tinfc_rows = [
             [Paragraph("TIN FC Branch Name", cell_b), Paragraph(branch_name, cell_n)],
             [Paragraph("TIN FC Branch Code", cell_b), Paragraph(branch_code, cell_n)],
@@ -438,20 +499,59 @@ def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str 
                     printer_rows.append([Paragraph("PortName", cell_b), Paragraph(p.port_name, cell_n)])
                 else:
                     printer_rows.append([Paragraph(f"Printer #{idx+1}", cell_b), Paragraph(str(p), cell_n)])
-            printer_rows.append([Paragraph("Total Printer connected", cell_b), Paragraph(str(len(data.printers)), cell_n)])
+            printer_rows.append([Paragraph("Total Printers Connected", cell_b), Paragraph(str(len(data.printers)), cell_n)])
         else:
             printer_rows.append([Paragraph("No active printers connected", cell_b), Paragraph("-", cell_n)])
         elements.append(build_table(printer_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- System Information (systeminfo) ---
+        elements.append(Paragraph("System Information", section_style))
+        sysinfo_rows = [
+            [Paragraph("System Manufacturer", cell_b), Paragraph(data.system_manufacturer or "-", cell_n)],
+            [Paragraph("System Model", cell_b), Paragraph(data.system_model or "-", cell_n)],
+            [Paragraph("Processor", cell_b), Paragraph(data.processor or "-", cell_n)],
+            [Paragraph("Total Physical Memory", cell_b), Paragraph(data.total_physical_memory or "-", cell_n)],
+            [Paragraph("BIOS Version", cell_b), Paragraph(data.bios_version or "-", cell_n)],
+            [Paragraph("Domain", cell_b), Paragraph(data.domain or "-", cell_n)],
+            [Paragraph("Logon Server", cell_b), Paragraph(data.logon_server or "-", cell_n)],
+            [Paragraph("System Boot Time", cell_b), Paragraph(data.system_boot_time or "-", cell_n)],
+            [Paragraph("Time Zone", cell_b), Paragraph(data.time_zone or "-", cell_n)],
+            [Paragraph("Registered Owner", cell_b), Paragraph(data.registered_owner or "-", cell_n)],
+            [Paragraph("Windows Directory", cell_b), Paragraph(data.windows_directory or "-", cell_n)],
+        ]
+        elements.append(build_table(sysinfo_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- Network Configuration (ipconfig /all) ---
+        elements.append(Paragraph("Network Configuration", section_style))
+        net_rows = []
+        if data.network_adapters:
+            for idx, adapter in enumerate(data.network_adapters):
+                if isinstance(adapter, NetworkAdapter):
+                    net_rows.append([Paragraph(f"Adapter {idx + 1}", cell_b), Paragraph(adapter.name, cell_n)])
+                    net_rows.append([Paragraph("Physical Address (MAC)", cell_b), Paragraph(adapter.mac_address or "-", cell_n)])
+                    net_rows.append([Paragraph("IPv4 Address", cell_b), Paragraph(adapter.ip_address or "-", cell_n)])
+                    net_rows.append([Paragraph("Subnet Mask", cell_b), Paragraph(adapter.subnet_mask or "-", cell_n)])
+                    net_rows.append([Paragraph("Default Gateway", cell_b), Paragraph(adapter.default_gateway or "-", cell_n)])
+                    net_rows.append([Paragraph("DHCP Enabled", cell_b), Paragraph(adapter.dhcp_enabled or "-", cell_n)])
+                    net_rows.append([Paragraph("DHCP Server", cell_b), Paragraph(adapter.dhcp_server or "-", cell_n)])
+                    net_rows.append([Paragraph("DNS Servers", cell_b), Paragraph(adapter.dns_servers or "-", cell_n)])
+                else:
+                    net_rows.append([Paragraph(f"Adapter #{idx+1}", cell_b), Paragraph(str(adapter), cell_n)])
+        else:
+            net_rows.append([Paragraph("No active network adapters found", cell_b), Paragraph("-", cell_n)])
+        elements.append(build_table(net_rows))
 
         doc.build(elements, onFirstPage=draw_page_decorations, onLaterPages=draw_page_decorations)
         logger.info(f"PDF compliance report successfully built: {pdf_path}")
     except Exception as e:
-        logger.error(f"Failed to generate NSDL PDF Report: {e}")
+        logger.error(f"Failed to generate InfraPulse PDF Report: {e}")
         generation_errors.append("PDF report generation failed")
 
     # Build XML compliance document
     try:
-        root = ET.Element("NsdlComplianceAudit", version="2.0.0")
+        root = ET.Element("InfraPulseComplianceAudit", version="2.0.0")
 
         meta = ET.SubElement(root, "BranchMetadata")
         ET.SubElement(meta, "BranchName").text = branch_name
@@ -467,6 +567,32 @@ def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str 
         ET.SubElement(sys_xml, "Antivirus").text = av_str
         ET.SubElement(sys_xml, "MacAddress").text = data.mac_address
         ET.SubElement(sys_xml, "CdRomDrive").text = data.drive_name
+
+        sysinfo_xml = ET.SubElement(root, "SystemInformation")
+        ET.SubElement(sysinfo_xml, "SystemManufacturer").text = data.system_manufacturer
+        ET.SubElement(sysinfo_xml, "SystemModel").text = data.system_model
+        ET.SubElement(sysinfo_xml, "Processor").text = data.processor
+        ET.SubElement(sysinfo_xml, "TotalPhysicalMemory").text = data.total_physical_memory
+        ET.SubElement(sysinfo_xml, "BIOSVersion").text = data.bios_version
+        ET.SubElement(sysinfo_xml, "Domain").text = data.domain
+        ET.SubElement(sysinfo_xml, "LogonServer").text = data.logon_server
+        ET.SubElement(sysinfo_xml, "SystemBootTime").text = data.system_boot_time
+        ET.SubElement(sysinfo_xml, "TimeZone").text = data.time_zone
+        ET.SubElement(sysinfo_xml, "RegisteredOwner").text = data.registered_owner
+        ET.SubElement(sysinfo_xml, "WindowsDirectory").text = data.windows_directory
+
+        net_xml = ET.SubElement(root, "NetworkConfiguration")
+        for adapter in data.network_adapters:
+            if isinstance(adapter, NetworkAdapter):
+                a_el = ET.SubElement(net_xml, "Adapter")
+                ET.SubElement(a_el, "Name").text = adapter.name
+                ET.SubElement(a_el, "PhysicalAddress").text = adapter.mac_address
+                ET.SubElement(a_el, "IPv4Address").text = adapter.ip_address
+                ET.SubElement(a_el, "SubnetMask").text = adapter.subnet_mask
+                ET.SubElement(a_el, "DefaultGateway").text = adapter.default_gateway
+                ET.SubElement(a_el, "DHCPEnabled").text = adapter.dhcp_enabled
+                ET.SubElement(a_el, "DHCPServer").text = adapter.dhcp_server
+                ET.SubElement(a_el, "DNSServers").text = adapter.dns_servers
 
         hf_xml = ET.SubElement(root, "Hotfixes")
         for hf in data.hotfixes:

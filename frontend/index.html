@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NSDL Enterprise Compliance Audit Portal</title>
+    <title>InfraPulse Enterprise Compliance Audit Portal</title>
 
     <!-- Premium Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -333,23 +333,23 @@
 
                 <!-- 1. Initial Configuration View -->
                 <div id="setupView">
-                    <h1>NSDL Compliance Audit Portal</h1>
-                    <p class="subtitle">Securely verify your branch systems to generate the official NSDL-compliant compliance audit & inventory report.</p>
+                    <h1>InfraPulse Compliance Audit Portal</h1>
+                    <p class="subtitle">Securely verify your branch systems to generate the official InfraPulse-compliant compliance audit & inventory report.</p>
 
                     <!-- TIN FC Branch configuration fields -->
                     <div class="form-box">
-                        <div class="form-box-title">📋 TIN FC Branch Configuration</div>
+                        <div class="form-box-title">📋 Branch Configuration</div>
                         <div class="input-group">
-                            <label for="branchName">TIN FC Branch Name</label>
-                            <input type="text" id="branchName" class="input-field" placeholder="Enter TIN FC branch name" value="">
+                            <label for="branchName">Branch Name</label>
+                            <input type="text" id="branchName" class="input-field" placeholder="Enter branch name" value="">
                         </div>
                         <div class="input-group">
-                            <label for="branchCode">TIN FC Branch Code</label>
-                            <input type="text" id="branchCode" class="input-field" placeholder="Enter TIN FC branch code" value="">
+                            <label for="branchCode">Branch Code</label>
+                            <input type="text" id="branchCode" class="input-field" placeholder="Enter branch code" value="">
                         </div>
                         <div class="input-group">
-                            <label for="officerName">Branch Officer Name</label>
-                            <input type="text" id="officerName" class="input-field" placeholder="Enter branch officer name" value="">
+                            <label for="officerName">User Name</label>
+                            <input type="text" id="officerName" class="input-field" placeholder="Enter user name" value="">
                         </div>
                     </div>
 
@@ -363,15 +363,19 @@
                         <h3>💡 Quick Verification Steps</h3>
                         <div class="step-item">
                             <span class="step-number">1</span>
-                            <span>Verify or adjust the <b>TIN FC Branch Configuration</b> details above.</span>
+                            <span>Verify or adjust the <b>Branch Configuration</b> details above.</span>
                         </div>
                         <div class="step-item">
                             <span class="step-number">2</span>
-                            <span>Click the <b>"Start Compliance Audit"</b> button to download your secure <b>verify_system.bat</b> launcher.</span>
+                            <span>Click the <b>"Start Compliance Audit"</b> button to download your secure launcher.</span>
                         </div>
-                        <div class="step-item">
+                        <div class="step-item" id="step3Windows">
                             <span class="step-number">3</span>
-                            <span>Double-click the downloaded file in your browser. It runs <b>completely silently in the background</b> (no console window flashes), and this page updates automatically!</span>
+                            <span>Double-click the downloaded <b>verify_system.bat</b> file. It runs <b>completely silently in the background</b> and this page updates automatically!</span>
+                        </div>
+                        <div class="step-item" id="step3Unix" style="display:none;">
+                            <span class="step-number">3</span>
+                            <span>Open a Terminal, run: <code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;">chmod +x verify_system.sh && ./verify_system.sh</code> — this page updates automatically when done.</span>
                         </div>
                     </div>
                 </div>
@@ -392,12 +396,25 @@
 
                     <!-- Single Simple Instruction Card -->
                     <div class="instructions-box" style="border-color: rgba(56, 189, 248, 0.25); background: rgba(56, 189, 248, 0.02); text-align: center; padding: 18px 24px; border-radius: 12px;">
-                        <p style="font-size: 14px; color: var(--text-main); font-weight: 500; line-height: 1.6; margin: 0;">
-                            👇 Please click on the downloaded <b>verify_system.bat</b> file in your browser's download bar (Top-Right) to start the background scan.
-                        </p>
-                        <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 8px; margin-bottom: 0;">
-                            It will run completely silently in the background. Once the secure upload completes, this page will update automatically!
-                        </p>
+                        <div id="processingInstructionsWindows">
+                            <p style="font-size: 14px; color: var(--text-main); font-weight: 500; line-height: 1.6; margin: 0;">
+                                👇 Please click on the downloaded <b>verify_system.bat</b> file in your browser's download bar to start the background scan.
+                            </p>
+                            <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 8px; margin-bottom: 0;">
+                                It will run completely silently in the background. Once the secure upload completes, this page will update automatically!
+                            </p>
+                        </div>
+                        <div id="processingInstructionsUnix" style="display:none;">
+                            <p style="font-size: 14px; color: var(--text-main); font-weight: 500; line-height: 1.6; margin: 0;">
+                                👇 Open a Terminal and run the downloaded script:
+                            </p>
+                            <p style="font-size: 13px; color: #38bdf8; font-family: monospace; background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 6px; margin-top: 10px; margin-bottom: 0;">
+                                chmod +x verify_system.sh &amp;&amp; ./verify_system.sh
+                            </p>
+                            <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 8px; margin-bottom: 0;">
+                                Once the secure upload completes, this page will update automatically!
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -424,7 +441,7 @@
                 <!-- Dual PDF / XML Download Buttons -->
                 <div style="margin: 20px 0; display: flex; flex-direction: column; gap: 10px;">
                     <a href="#" id="downloadPdfBtn" class="btn" target="_blank">
-                        📥 Download NSDL PDF Report
+                        📥 Download InfraPulse PDF Report
                     </a>
                     <a href="#" id="downloadXmlBtn" class="btn btn-xml" target="_blank">
                         📄 Export XML Compliance Data
@@ -434,7 +451,7 @@
                 <div class="instructions-box" style="margin-top: 15px; border-color: rgba(16, 185, 129, 0.2); background: rgba(16, 185, 129, 0.02);">
                     <h3 style="color: #34d399;">✓ Reports Saved in Backend</h3>
                     <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
-                        A beautifully formatted, NSDL-compliant inspection PDF and structured XML compliance inventory data have been securely stored. You can safely exit this portal.
+                        A beautifully formatted, InfraPulse-compliant inspection PDF and structured XML compliance inventory data have been securely stored. You can safely exit this portal.
                     </p>
                 </div>
             </div>
@@ -442,6 +459,22 @@
     </div>
 
     <script>
+        // Detect client OS
+        function detectOS() {
+            const ua = navigator.userAgent || '';
+            if (/Mac|Darwin/i.test(ua) && !/iPhone|iPad/.test(ua)) return 'mac';
+            if (/Linux/i.test(ua)) return 'linux';
+            return 'windows';
+        }
+        const clientOS = detectOS();
+        const isUnix = clientOS === 'linux' || clientOS === 'mac';
+
+        // Show OS-appropriate instructions on load
+        if (isUnix) {
+            document.getElementById('step3Windows').style.display = 'none';
+            document.getElementById('step3Unix').style.display = 'flex';
+        }
+
         // Extract or generate a unique Client Session ID
         const urlParams = new URLSearchParams(window.location.search);
         let clientId = urlParams.get('client_id');
@@ -460,7 +493,7 @@
             const bCode = document.getElementById('branchCode').value;
             const oName = document.getElementById('officerName').value;
 
-            downloadBtn.href = `/download-vbs?client_id=${clientId}&branch_name=${encodeURIComponent(bName)}&branch_code=${encodeURIComponent(bCode)}&officer_name=${encodeURIComponent(oName)}`;
+            downloadBtn.href = `/download-vbs?client_id=${clientId}&os=${clientOS}&branch_name=${encodeURIComponent(bName)}&branch_code=${encodeURIComponent(bCode)}&officer_name=${encodeURIComponent(oName)}`;
         }
 
         // Run URL builder on interaction
@@ -485,6 +518,11 @@
         }
 
         function showProcessingState() {
+            // Show OS-appropriate processing instructions
+            if (isUnix) {
+                document.getElementById('processingInstructionsWindows').style.display = 'none';
+                document.getElementById('processingInstructionsUnix').style.display = 'block';
+            }
             const setupView = document.getElementById('setupView');
             const processingView = document.getElementById('processingView');
             const statusBadge = document.getElementById('statusBadge');
