@@ -57,6 +57,39 @@ No manual data entry. No IT staff required on-site. Works on any platform.
 
 ## System Architecture
 
+```mermaid
+graph TD
+    A[User Browser] -->|1 Open portal URL| B[FastAPI Backend]
+    B -->|2 Serve index.html| A
+    A -->|3 Enter name and click Begin| A
+    A -->|4 GET /download-vbs| B
+    B -->|5 Set portal_token cookie| A
+    B -->|6 Return launcher file| A
+    A -->|7 Open SSE connection| B
+
+    subgraph WIN[Windows]
+        W1[Run .bat file] --> W2[Download audit.ps1]
+        W2 --> W3[Collect WMI and CIM data]
+    end
+
+    subgraph UNIX[Mac and Linux]
+        M1[Run .sh in Terminal] --> M2[Download audit.sh]
+        M2 --> M3[Collect system data via bash]
+    end
+
+    A -->|8 User runs launcher| WIN
+    A -->|8 User runs launcher| UNIX
+
+    W3 -->|9 POST /upload-assortment| B
+    M3 -->|9 POST /upload-assortment| B
+
+    B -->|10 Validate token| B
+    B -->|11 Generate PDF and XML| B
+    B -->|12 SSE push completed| A
+    A -->|13 Click Download Report| B
+    B -->|14 Return PDF or XML| A
+```
+
 The system has three main parts working together:
 
 **1. Browser (Frontend)**
@@ -83,6 +116,31 @@ The system has three main parts working together:
 ---
 
 ## Data Flow
+
+```mermaid
+flowchart TD
+    A([User opens Portal URL]) --> B([Browser loads index.html])
+    B --> C([User enters Full Name and clicks Begin])
+    C --> D([Browser calls /download-vbs])
+    D --> E([Backend creates session with secure token])
+    E --> F([Launcher file downloads to user machine])
+    F --> G([Browser opens SSE connection to /events])
+    F --> H([User runs .bat or .sh file])
+    H --> I([Script downloads audit.ps1 or audit.sh])
+    I --> J([Collect OS and License info])
+    J --> K([Collect Network and Adapter info])
+    K --> L([Collect Hardware and System info])
+    L --> M([Collect Printers, Hotfixes, Antivirus])
+    M --> N([Script uploads JSON to /upload-assortment])
+    N --> O([Backend validates token])
+    O --> P([Backend generates PDF and XML report])
+    P --> Q([Session status updated to completed])
+    Q --> R([SSE pushes completed event to browser])
+    G --> R
+    R --> S([Browser shows Collection Complete])
+    S --> T([User clicks Download PDF or XML])
+    T --> U([Report downloaded successfully])
+```
 
 The following steps happen in order when a user runs a collection:
 
