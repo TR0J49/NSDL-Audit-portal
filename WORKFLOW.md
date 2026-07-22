@@ -58,39 +58,35 @@ No manual data entry. No IT staff required on-site. Works on any platform.
 
 ```mermaid
 graph TD
-    A[User Browser] -->|Opens portal URL| B[FastAPI Backend]
-    B -->|Serves index.html| A
-    A -->|Enters Full Name, clicks Begin| A
-    A -->|GET /download-vbs| B
-    B -->|Sets portal_token cookie| A
-    B -->|Returns .bat or .sh launcher| A
-    A -->|Opens SSE /events connection| B
+    A([🌐 User Browser]) -->|1 - Open portal URL| B([⚙️ FastAPI Backend])
+    B -->|2 - Serve index.html| A
+    A -->|3 - Enter name, click Begin| A
+    A -->|4 - GET /download-vbs| B
+    B -->|5 - Set portal_token cookie| A
+    B -->|6 - Return launcher file| A
+    A -->|7 - Open SSE connection /events| B
 
-    subgraph Windows
-        W1[.bat file runs PowerShell]
-        W2[PowerShell downloads audit.ps1]
-        W3[Collects WMI/CIM data]
+    subgraph WIN["🪟 Windows"]
+        W1[Run .bat file] --> W2[Download audit.ps1]
+        W2 --> W3[Collect WMI/CIM data]
     end
 
-    subgraph Mac / Linux
-        M1[.sh file runs in Terminal]
-        M2[curl downloads audit.sh]
-        M3[Collects system data via bash]
+    subgraph UNIX["🍎 Mac / 🐧 Linux"]
+        M1[Run .sh in Terminal] --> M2[Download audit.sh]
+        M2 --> M3[Collect system data via bash]
     end
 
-    A -->|User runs launcher| Windows
-    A -->|User runs launcher| Mac / Linux
+    A -->|8 - User runs launcher| WIN
+    A -->|8 - User runs launcher| UNIX
 
-    W3 -->|POST /upload-assortment| B
-    M3 -->|POST /upload-assortment| B
+    W3 -->|9 - POST /upload-assortment| B
+    M3 -->|9 - POST /upload-assortment| B
 
-    B -->|Validates token| B
-    B -->|Generates PDF + XML| B
-    B -->|Updates session status| B
-    B -->|SSE pushes completed event| A
-    A -->|Shows Download Report button| A
-    A -->|GET /download-report| B
-    B -->|Returns PDF or XML file| A
+    B -->|10 - Validate token| B
+    B -->|11 - Generate PDF and XML| B
+    B -->|12 - SSE push - completed| A
+    A -->|13 - Click Download Report| B
+    B -->|14 - Return PDF or XML| A
 ```
 
 ---
@@ -98,33 +94,46 @@ graph TD
 ## Data Flow
 
 ```mermaid
-sequenceDiagram
-    participant U as User Browser
-    participant S as FastAPI Server
-    participant P as PowerShell / Bash Script
+flowchart LR
+    subgraph BROWSER["🌐 Browser"]
+        B1([Open Portal URL])
+        B2([Enter Full Name])
+        B3([Click Begin])
+        B4([File Downloads])
+        B5([SSE Connection Opens])
+        B6([Spinner - Waiting...])
+        B7([✅ Collection Complete])
+        B8([Download PDF Report])
+    end
 
-    U->>S: GET / (open portal)
-    S-->>U: index.html
+    subgraph SERVER["⚙️ FastAPI Server"]
+        S1([Serve index.html])
+        S2([Create Session + Token])
+        S3([Return .bat or .sh])
+        S4([Stream SSE Events])
+        S5([Receive JSON Data])
+        S6([Generate PDF + XML])
+        S7([Push completed Event])
+        S8([Serve PDF File])
+    end
 
-    U->>S: GET /download-vbs?client_id=...&os=windows
-    S-->>U: verify_system_xxx.bat + Set-Cookie: portal_token
+    subgraph SCRIPT["💻 Script on User Machine"]
+        P1([Download audit.ps1 or audit.sh])
+        P2([Collect OS Info])
+        P3([Collect Network Info])
+        P4([Collect System Info])
+        P5([Collect Printers + Hotfixes])
+        P6([Upload JSON to Server])
+    end
 
-    U->>S: GET /events?client_id=... (SSE open)
-    Note over S,U: Long-lived connection stays open
-
-    U->>P: User double-clicks .bat / runs .sh in Terminal
-    P->>S: GET /download-script?client_id=...&assortment_token=...
-    S-->>P: audit.ps1 or audit.sh (with tokens baked in)
-
-    Note over P: Collects OS, network, printers,<br/>hotfixes, system info (15-30s)
-
-    P->>S: POST /upload-assortment (JSON payload)
-    S->>S: Generate PDF + XML report
-    S->>S: Update session status = completed
-    S-->>U: SSE event: {"status":"completed"}
-
-    U->>S: GET /download-report?format=pdf
-    S-->>U: PDF file download
+    B1 --> S1 --> B2 --> B3
+    B3 --> S2 --> S3 --> B4
+    B4 --> B5 --> S4
+    B4 --> P1
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6
+    P6 --> S5 --> S6 --> S7
+    S7 --> B6 --> B7 --> B8
+    B8 --> S8
 ```
 
 ---
