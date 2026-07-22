@@ -136,8 +136,10 @@ if [ "$OS_TYPE" = "Darwin" ]; then
             MAC_A=$(ifconfig "$iface" 2>/dev/null | awk '/ether/{print $2}' | head -1)
             GW=$(route -n get default 2>/dev/null | awk '/gateway:/{print $2}')
             DNS=$(scutil --dns 2>/dev/null | awk '/nameserver/{print $3}' | sort -u | head -3 | tr '\n' ',' | sed 's/,$//')
+            IPV6=$(ifconfig "$iface" 2>/dev/null | awk '/inet6 /{print $2}' | grep -v '^fe80' | grep -v '^::1' | head -1)
+            IPV6_LL=$(ifconfig "$iface" 2>/dev/null | awk '/inet6.*fe80/{print $2}' | head -1)
             $FIRST || NETWORK_ADAPTERS_JSON="$NETWORK_ADAPTERS_JSON,"
-            NETWORK_ADAPTERS_JSON="$NETWORK_ADAPTERS_JSON{\"name\":\"$iface\",\"mac_address\":\"${MAC_A:-}\",\"ip_address\":\"${IP:-}\",\"subnet_mask\":\"${MASK:-}\",\"default_gateway\":\"${GW:-}\",\"dhcp_enabled\":\"True\",\"dhcp_server\":\"\",\"dns_servers\":\"${DNS:-}\"}"
+            NETWORK_ADAPTERS_JSON="$NETWORK_ADAPTERS_JSON{\"name\":\"$iface\",\"mac_address\":\"${MAC_A:-}\",\"ip_address\":\"${IP:-}\",\"subnet_mask\":\"${MASK:-}\",\"default_gateway\":\"${GW:-}\",\"ipv6_address\":\"${IPV6:-}\",\"temp_ipv6_address\":\"\",\"link_local_ipv6\":\"${IPV6_LL:-}\",\"dhcp_enabled\":\"True\",\"dhcp_server\":\"\",\"dns_servers\":\"${DNS:-}\"}"
             FIRST=false
         done
         NETWORK_ADAPTERS_JSON="$NETWORK_ADAPTERS_JSON]"
@@ -157,8 +159,11 @@ else
             DNS=$(grep nameserver /etc/resolv.conf 2>/dev/null | awk '{print $2}' | head -3 | tr '\n' ',' | sed 's/,$//')
             DHCP="False"
             command -v dhclient &>/dev/null && DHCP="True"
+            IPV6=$(ip -6 addr show "$iface" 2>/dev/null | awk '/inet6 /{print $2}' | grep -v '^fe80' | grep -v '^::1' | head -1 | cut -d/ -f1)
+            IPV6_TEMP=$(ip -6 addr show "$iface" 2>/dev/null | grep 'temporary' | awk '{print $2}' | head -1 | cut -d/ -f1)
+            IPV6_LL=$(ip -6 addr show "$iface" 2>/dev/null | awk '/inet6.*fe80/{print $2}' | head -1 | cut -d/ -f1)
             $FIRST || NETWORK_ADAPTERS_JSON="$NETWORK_ADAPTERS_JSON,"
-            NETWORK_ADAPTERS_JSON="$NETWORK_ADAPTERS_JSON{\"name\":\"$iface\",\"mac_address\":\"${MAC_A:-}\",\"ip_address\":\"${IP:-}\",\"subnet_mask\":\"${PREFIX:-} (prefix)\",\"default_gateway\":\"${GW:-}\",\"dhcp_enabled\":\"$DHCP\",\"dhcp_server\":\"\",\"dns_servers\":\"${DNS:-}\"}"
+            NETWORK_ADAPTERS_JSON="$NETWORK_ADAPTERS_JSON{\"name\":\"$iface\",\"mac_address\":\"${MAC_A:-}\",\"ip_address\":\"${IP:-}\",\"subnet_mask\":\"${PREFIX:-} (prefix)\",\"default_gateway\":\"${GW:-}\",\"ipv6_address\":\"${IPV6:-}\",\"temp_ipv6_address\":\"${IPV6_TEMP:-}\",\"link_local_ipv6\":\"${IPV6_LL:-}\",\"dhcp_enabled\":\"$DHCP\",\"dhcp_server\":\"\",\"dns_servers\":\"${DNS:-}\"}"
             FIRST=false
         done
         NETWORK_ADAPTERS_JSON="$NETWORK_ADAPTERS_JSON]"
@@ -234,8 +239,8 @@ EOF
 )
 
 CLIENT_ID="CLIENT_ID_PLACEHOLDER"
-AUDIT_TOKEN="AUDIT_TOKEN_PLACEHOLDER"
-API_URL="API_BASE_URL_PLACEHOLDER/upload-audit?client_id=$CLIENT_ID&audit_token=$AUDIT_TOKEN"
+ASSORTMENT_TOKEN="AUDIT_TOKEN_PLACEHOLDER"
+API_URL="API_BASE_URL_PLACEHOLDER/upload-assortment?client_id=$CLIENT_ID&assortment_token=$ASSORTMENT_TOKEN"
 
 echo "Uploading secure payload to backend..."
 if curl -s -X POST "$API_URL" -H "Content-Type: application/json" -d "$JSON"; then

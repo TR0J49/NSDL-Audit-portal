@@ -4,14 +4,15 @@
 # Version: 2.0.0
 
 from fastapi import Cookie, FastAPI, Query, Request, HTTPException
-from fastapi.responses import FileResponse, Response, PlainTextResponse, JSONResponse
+from fastapi.responses import FileResponse, Response, PlainTextResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, validator
 from typing import Union, List, Optional
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.pagesizes import letter
+import asyncio
 import os
 import json
 import xml.etree.ElementTree as ET
@@ -43,8 +44,6 @@ ALLOWED_ORIGINS = env_list("ALLOWED_ORIGINS")
 LOGS_DIR = env_path("LOGS_DIR", str(BASE_DIR / "logs"))
 USER_INFO_DIR = env_path("USER_INFO_DIR", str(BASE_DIR / "user_info"))
 SESSION_STORE_PATH = env_path("SESSION_STORE_PATH", str(USER_INFO_DIR / "sessions.json"))
-DEFAULT_BRANCH_NAME = os.getenv("DEFAULT_BRANCH_NAME", "")
-DEFAULT_BRANCH_CODE = os.getenv("DEFAULT_BRANCH_CODE", "")
 DEFAULT_OFFICER_NAME = os.getenv("DEFAULT_OFFICER_NAME", "")
 
 # Set up logging
@@ -106,23 +105,25 @@ def validate_client_id(client_id: str) -> str:
     return client_id
 
 
-def verify_audit_token(client_id: str, audit_token: str) -> dict:
+def verify_assortment_token(client_id: str, assortment_token: str) -> dict:
     session = sessions.get(client_id)
     if not session:
-        load_sessions()
-        session = sessions.get(client_id)
-    if not session or session.get("audit_token_hash") != hash_secret(audit_token or ""):
-        raise HTTPException(status_code=403, detail="Invalid audit session token.")
+        with session_lock:
+            load_sessions()
+            session = sessions.get(client_id)
+    if not session or session.get("assortment_token_hash") != hash_secret(assortment_token or ""):
+        raise HTTPException(status_code=403, detail="Invalid assortment session token.")
     return session
 
 
 def verify_portal_token(client_id: str, portal_token: Optional[str]) -> dict:
     session = sessions.get(client_id)
     if not session:
-        load_sessions()
-        session = sessions.get(client_id)
+        with session_lock:
+            load_sessions()
+            session = sessions.get(client_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Audit session has not been found.")
+        raise HTTPException(status_code=404, detail="Assortment session has not been found.")
     if session.get("portal_token_hash") != hash_secret(portal_token or ""):
         raise HTTPException(status_code=403, detail="Invalid portal session token.")
     return session
@@ -162,8 +163,11 @@ class NetworkAdapter(BaseModel):
     dhcp_enabled: str = "False"
     dhcp_server: str = ""
     dns_servers: str = ""
+    ipv6_address: str = ""
+    temp_ipv6_address: str = ""
+    link_local_ipv6: str = ""
 
-class AuditData(BaseModel):
+class AssortmentData(BaseModel):
     computer_name: str
     os_name: str
     os_version: str
@@ -197,19 +201,43 @@ class AuditData(BaseModel):
     @validator('printers', pre=True, allow_reuse=True)
     def coerce_printers(cls, v):
         if v is None: return []
-        if isinstance(v, list): return v
+        if isinstance(v, str): return [v]
+        if isinstance(v, list):
+            result = []
+            for item in v:
+                if isinstance(item, dict):
+                    result.append(PrinterDetail(**{k: str(val) for k, val in item.items() if k in PrinterDetail.__fields__}))
+                else:
+                    result.append(item)
+            return result
         return [v]
 
     @validator('hotfixes', pre=True, allow_reuse=True)
     def coerce_hotfixes(cls, v):
         if v is None: return []
-        if isinstance(v, list): return v
+        if isinstance(v, str): return [v]
+        if isinstance(v, list):
+            result = []
+            for item in v:
+                if isinstance(item, dict):
+                    result.append(HotfixDetail(**{k: str(val) for k, val in item.items() if k in HotfixDetail.__fields__}))
+                else:
+                    result.append(item)
+            return result
         return [v]
 
     @validator('network_adapters', pre=True, allow_reuse=True)
     def coerce_network_adapters(cls, v):
         if v is None: return []
-        if isinstance(v, list): return v
+        if isinstance(v, str): return [v]
+        if isinstance(v, list):
+            result = []
+            for item in v:
+                if isinstance(item, dict):
+                    result.append(NetworkAdapter(**{k: str(val) for k, val in item.items() if k in NetworkAdapter.__fields__}))
+                else:
+                    result.append(item)
+            return result
         return [v]
 
 # ------------------------------------------------------------------------------
@@ -222,16 +250,56 @@ def home():
 
 @app.get("/check-status")
 def check_status(client_id: str = Query(...), portal_token: Optional[str] = Cookie(None)):
-    """Allows frontend portal to poll active audit status in real-time."""
+    """Fallback polling endpoint for clients that cannot use SSE."""
     cid = validate_client_id(client_id)
     session = verify_portal_token(cid, portal_token)
     return JSONResponse(content={
         "status": session.get("status", "pending"),
-        "branch_name": session.get("branch_name", ""),
-        "branch_code": session.get("branch_code", ""),
         "officer_name": session.get("officer_name", ""),
         "error": session.get("error")
     })
+
+@app.get("/events")
+async def sse_events(client_id: str = Query(...), portal_token: Optional[str] = Cookie(None)):
+    """SSE endpoint — pushes status updates to the browser over a single long-lived connection."""
+    cid = validate_client_id(client_id)
+    verify_portal_token(cid, portal_token)
+
+    async def event_stream():
+        yield "data: {\"status\": \"connected\"}\n\n"
+        last_status = None
+        elapsed = 0
+        timeout = 300  # 5 min max
+
+        while elapsed < timeout:
+            session = sessions.get(cid, {})
+            status = session.get("status", "pending")
+
+            if status != last_status:
+                last_status = status
+                payload = json.dumps({
+                    "status": status,
+                    "officer_name": session.get("officer_name", ""),
+                    "error": session.get("error")
+                })
+                yield f"data: {payload}\n\n"
+                if status in ("completed", "failed"):
+                    return
+
+            await asyncio.sleep(0.5)
+            elapsed += 0.5
+
+        yield "data: {\"status\": \"timeout\"}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        }
+    )
 
 def detect_client_os(user_agent: str) -> str:
     """Returns 'windows', 'mac', or 'linux' based on User-Agent string."""
@@ -244,10 +312,10 @@ def detect_client_os(user_agent: str) -> str:
 
 
 @app.get("/download-script", response_class=PlainTextResponse)
-def download_script(request: Request, client_id: str = Query(...), audit_token: str = Query(...)):
-    """Dynamically serves the audit script (PowerShell or Bash) baked with server URL and tokens."""
+def download_script(request: Request, client_id: str = Query(...), assortment_token: str = Query(...)):
+    """Dynamically serves the assortment script (PowerShell or Bash) baked with server URL and tokens."""
     cid = validate_client_id(client_id)
-    verify_audit_token(cid, audit_token)
+    verify_assortment_token(cid, assortment_token)
     base_url = str(request.base_url).rstrip('/')
     session_meta = sessions.get(cid, {})
     client_os = session_meta.get("client_os", "windows")
@@ -262,20 +330,18 @@ def download_script(request: Request, client_id: str = Query(...), audit_token: 
             script_content = f.read()
         dynamic_script = script_content.replace("API_BASE_URL_PLACEHOLDER", base_url)
         dynamic_script = dynamic_script.replace("CLIENT_ID_PLACEHOLDER", cid)
-        dynamic_script = dynamic_script.replace("AUDIT_TOKEN_PLACEHOLDER", audit_token)
+        dynamic_script = dynamic_script.replace("AUDIT_TOKEN_PLACEHOLDER", assortment_token)
         return PlainTextResponse(content=dynamic_script)
     except Exception as e:
-        logger.error(f"Failed to load audit script ({script_file.name}): {e}")
-        raise HTTPException(status_code=500, detail="Audit script source unavailable.")
+        logger.error(f"Failed to load assortment script ({script_file.name}): {e}")
+        raise HTTPException(status_code=500, detail="Assortment script source unavailable.")
 
 @app.get("/download-vbs")
 def download_vbs(
     request: Request,
     client_id: str = Query(...),
-    branch_name: Optional[str] = Query(None),
-    branch_code: Optional[str] = Query(None),
     officer_name: Optional[str] = Query(None),
-    os: Optional[str] = Query(None)
+    os_hint: Optional[str] = Query(None, alias="os")
 ):
     """Generates a launcher script appropriate for the client OS:
     - Windows → .bat (runs PowerShell silently)
@@ -283,14 +349,12 @@ def download_vbs(
     """
     cid = validate_client_id(client_id)
     base_url = str(request.base_url).rstrip('/')
-    audit_token = secrets.token_urlsafe(32)
+    assortment_token = secrets.token_urlsafe(32)
     portal_token = secrets.token_urlsafe(32)
-    resolved_branch_name = (branch_name or DEFAULT_BRANCH_NAME).strip()
-    resolved_branch_code = (branch_code or DEFAULT_BRANCH_CODE).strip()
     resolved_officer_name = (officer_name or DEFAULT_OFFICER_NAME).strip()
 
     user_agent = request.headers.get("user-agent", "")
-    client_os = os.lower() if os else detect_client_os(user_agent)
+    client_os = os_hint.lower() if os_hint else detect_client_os(user_agent)
     if client_os not in ("windows", "linux", "mac"):
         client_os = "windows"
 
@@ -298,10 +362,8 @@ def download_vbs(
         sessions[cid] = {
             "status": "pending",
             "client_os": client_os,
-            "branch_name": resolved_branch_name,
-            "branch_code": resolved_branch_code,
             "officer_name": resolved_officer_name,
-            "audit_token_hash": hash_secret(audit_token),
+            "assortment_token_hash": hash_secret(assortment_token),
             "portal_token_hash": hash_secret(portal_token),
             "pdf_path": None,
             "xml_path": None,
@@ -310,7 +372,7 @@ def download_vbs(
         }
         save_sessions()
 
-    script_url = f"{base_url}/download-script?client_id={quote(cid)}&audit_token={quote(audit_token)}"
+    script_url = f"{base_url}/download-script?client_id={quote(cid)}&assortment_token={quote(assortment_token)}"
 
     if client_os in ("linux", "mac"):
         launcher_content = f"""#!/bin/bash
@@ -358,7 +420,9 @@ def draw_page_decorations(canvas, doc):
 # ------------------------------------------------------------------------------
 # Helper: build a standard 2-col table
 # ------------------------------------------------------------------------------
-def build_table(rows, col_widths=[180, 324]):
+def build_table(rows, col_widths=None):
+    if col_widths is None:
+        col_widths = [180, 324]
     t = Table(rows, colWidths=col_widths)
     t.setStyle(TableStyle([
         ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
@@ -368,25 +432,38 @@ def build_table(rows, col_widths=[180, 324]):
     ]))
     return t
 
+
+def get_printer_type(port_name: str) -> str:
+    port = (port_name or "").upper()
+    physical_indicators = ["USB", "LPT", "COM", "IP_", "DOT4", "WSD"]
+    virtual_indicators  = ["NUL", "PORTPROMPT", "SHRFAX", "MICROSOFTSHAREDPRINTER",
+                           "MICROSOFT.", "AD_PORT", "TS", "XPS", "PDF", "FAX",
+                           "ONENOTE", "ONENOTEIM", "CLMREDIRECTOR"]
+    for ind in physical_indicators:
+        if port.startswith(ind) or ind in port:
+            return "Physical Printer"
+    for ind in virtual_indicators:
+        if ind in port:
+            return "Virtual Printer"
+    return "Virtual Printer"
+
 # ------------------------------------------------------------------------------
 # 4. COMPLIANCE INGESTION AND EXPORTS (PDF & XML GENERATOR)
 # ------------------------------------------------------------------------------
-@app.post("/upload-audit")
-def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str = Query(...)):
+@app.post("/upload-assortment")
+def upload_assortment(data: AssortmentData, client_id: str = Query(...), assortment_token: str = Query(...)):
     cid = validate_client_id(client_id)
-    verify_audit_token(cid, audit_token)
-    logger.info(f"Uploading compliance audit for client session ID: {cid}")
+    verify_assortment_token(cid, assortment_token)
+    logger.info(f"Uploading system assortment data for client session ID: {cid}")
 
     timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
     # Load session branch info or fall back to defaults
     session_meta = sessions.get(cid, {})
-    branch_name = session_meta.get("branch_name", DEFAULT_BRANCH_NAME)
-    branch_code = session_meta.get("branch_code", DEFAULT_BRANCH_CODE)
     officer_name = session_meta.get("officer_name", DEFAULT_OFFICER_NAME)
 
-    safe_branch_name = sanitize_filename_part(branch_name)
-    file_prefix = USER_INFO_DIR / f"{safe_branch_name}_{timestamp}"
+    safe_officer_name = sanitize_filename_part(officer_name, fallback="assortment")
+    file_prefix = USER_INFO_DIR / f"{safe_officer_name}_{timestamp}"
     json_path = Path(f"{file_prefix}.json")
     pdf_path = Path(f"{file_prefix}.pdf")
     xml_path = Path(f"{file_prefix}.xml")
@@ -405,45 +482,81 @@ def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str 
     try:
         doc = SimpleDocTemplate(str(pdf_path), pagesize=letter, leftMargin=54, rightMargin=54, topMargin=54, bottomMargin=54)
 
-        title_style = ParagraphStyle('TitleStyle', fontName='Helvetica-Bold', fontSize=14, leading=16, alignment=1, spaceAfter=20)
+        title_style   = ParagraphStyle('TitleStyle',   fontName='Helvetica-Bold', fontSize=14, leading=18, alignment=1, spaceAfter=4)
+        date_style    = ParagraphStyle('DateStyle',    fontName='Helvetica',      fontSize=9,  leading=12, alignment=1, spaceAfter=16, textColor=colors.HexColor("#555555"))
         section_style = ParagraphStyle('SectionStyle', fontName='Helvetica-Bold', fontSize=10, leading=12, spaceBefore=14, spaceAfter=6)
-        cell_b = ParagraphStyle('CellBold', fontName='Helvetica-Bold', fontSize=8, leading=10)
-        cell_n = ParagraphStyle('CellNormal', fontName='Helvetica', fontSize=8, leading=10)
+        cell_b = ParagraphStyle('CellBold',   fontName='Helvetica-Bold', fontSize=8, leading=10)
+        cell_n = ParagraphStyle('CellNormal', fontName='Helvetica',      fontSize=8, leading=10)
+
+        exec_dt = datetime.now().strftime("%d-%b-%Y  %H:%M:%S")
 
         elements = []
 
-        # Title
-        elements.append(Paragraph("Inspection Report", title_style))
-        elements.append(Spacer(1, 10))
+        # Title + real-time date
+        elements.append(Paragraph("System Data Collection Report", title_style))
+        elements.append(Paragraph(f"Generated on: {exec_dt}", date_style))
+        elements.append(Spacer(1, 6))
 
-        # --- TINFC Details ---
-        elements.append(Paragraph("TINFC Details", section_style))
-        exec_dt = datetime.now().strftime("%d-%b-%Y_%H:%M:%S")
+        # --- 1. Collection Details (User Info) ---
+        elements.append(Paragraph("Collection Details", section_style))
         consent_text = ("We provide approval to InfraPulse Infrastructure Ltd.(InfraPulse) "
                         "to capture the details regarding the System details and share the details with InfraPulse.")
-        tinfc_rows = [
-            [Paragraph("TIN FC Branch Name", cell_b), Paragraph(branch_name, cell_n)],
-            [Paragraph("TIN FC Branch Code", cell_b), Paragraph(branch_code, cell_n)],
-            [Paragraph("TIN FC Branch Officer Name", cell_b), Paragraph(officer_name, cell_n)],
-            [Paragraph("Execution DateTime", cell_b), Paragraph(exec_dt, cell_n)],
-            [Paragraph("Consent", cell_b), Paragraph(consent_text, cell_n)],
-        ]
-        elements.append(build_table(tinfc_rows))
+        elements.append(build_table([
+            [Paragraph("Collected By", cell_b),        Paragraph(officer_name, cell_n)],
+            [Paragraph("Collection Date", cell_b),     Paragraph(datetime.now().strftime("%d-%b-%Y"), cell_n)],
+            [Paragraph("Collection Time", cell_b),     Paragraph(datetime.now().strftime("%H:%M:%S"), cell_n)],
+            [Paragraph("Consent", cell_b),             Paragraph(consent_text, cell_n)],
+        ]))
         elements.append(Spacer(1, 12))
 
-        # --- Operating System ---
-        elements.append(Paragraph("Operating System", section_style))
-        os_rows = [
+        # --- 2. Network Information ---
+        elements.append(Paragraph("Network Information", section_style))
+        net_rows = []
+        net_rows.append([Paragraph("MAC Address", cell_b), Paragraph(data.mac_address, cell_n)])
+        if data.network_adapters:
+            for idx, adapter in enumerate(data.network_adapters):
+                if isinstance(adapter, NetworkAdapter):
+                    net_rows.append([Paragraph(f"Adapter {idx + 1}", cell_b), Paragraph(adapter.name, cell_n)])
+                    net_rows.append([Paragraph("Physical Address (MAC)", cell_b), Paragraph(adapter.mac_address or "-", cell_n)])
+                    net_rows.append([Paragraph("IPv4 Address", cell_b), Paragraph(adapter.ip_address or "-", cell_n)])
+                    net_rows.append([Paragraph("Subnet Mask", cell_b), Paragraph(adapter.subnet_mask or "-", cell_n)])
+                    net_rows.append([Paragraph("Default Gateway", cell_b), Paragraph(adapter.default_gateway or "-", cell_n)])
+                    net_rows.append([Paragraph("IPv6 Address", cell_b), Paragraph(adapter.ipv6_address or "-", cell_n)])
+                    net_rows.append([Paragraph("Temporary IPv6 Address", cell_b), Paragraph(adapter.temp_ipv6_address or "-", cell_n)])
+                    net_rows.append([Paragraph("Link-local IPv6 Address", cell_b), Paragraph(adapter.link_local_ipv6 or "-", cell_n)])
+                    net_rows.append([Paragraph("DHCP Enabled", cell_b), Paragraph(adapter.dhcp_enabled or "-", cell_n)])
+                    net_rows.append([Paragraph("DHCP Server", cell_b), Paragraph(adapter.dhcp_server or "-", cell_n)])
+                    net_rows.append([Paragraph("DNS Servers", cell_b), Paragraph(adapter.dns_servers or "-", cell_n)])
+                else:
+                    net_rows.append([Paragraph(f"Adapter #{idx+1}", cell_b), Paragraph(str(adapter), cell_n)])
+        else:
+            net_rows.append([Paragraph("No active network adapters found", cell_b), Paragraph("-", cell_n)])
+        elements.append(build_table(net_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 3. System Information ---
+        elements.append(Paragraph("System Information", section_style))
+        elements.append(build_table([
+            [Paragraph("Computer Name", cell_b), Paragraph(data.computer_name, cell_n)],
+            [Paragraph("System Manufacturer", cell_b), Paragraph(data.system_manufacturer or "-", cell_n)],
+            [Paragraph("System Model", cell_b), Paragraph(data.system_model or "-", cell_n)],
+            [Paragraph("Processor", cell_b), Paragraph(data.processor or "-", cell_n)],
+            [Paragraph("Total Physical Memory", cell_b), Paragraph(data.total_physical_memory or "-", cell_n)],
+            [Paragraph("BIOS Version", cell_b), Paragraph(data.bios_version or "-", cell_n)],
             [Paragraph("OS Name", cell_b), Paragraph(data.os_name, cell_n)],
             [Paragraph("OS Version", cell_b), Paragraph(data.os_version, cell_n)],
             [Paragraph("OS Architecture", cell_b), Paragraph(data.architecture, cell_n)],
-            [Paragraph("CS Name", cell_b), Paragraph(data.computer_name, cell_n)],
-            [Paragraph("LicenseStatus", cell_b), Paragraph(data.license_status, cell_n)],
-        ]
-        elements.append(build_table(os_rows))
+            [Paragraph("License Status", cell_b), Paragraph(data.license_status, cell_n)],
+            [Paragraph("Windows Directory", cell_b), Paragraph(data.windows_directory or "-", cell_n)],
+            [Paragraph("System Boot Time", cell_b), Paragraph(data.system_boot_time or "-", cell_n)],
+            [Paragraph("Time Zone", cell_b), Paragraph(data.time_zone or "-", cell_n)],
+            [Paragraph("Domain", cell_b), Paragraph(data.domain or "-", cell_n)],
+            [Paragraph("Logon Server", cell_b), Paragraph(data.logon_server or "-", cell_n)],
+            [Paragraph("Registered Owner", cell_b), Paragraph(data.registered_owner or "-", cell_n)],
+        ]))
         elements.append(Spacer(1, 12))
 
-        # --- OS Update Details (Hotfixes) ---
+        # --- 4. OS Update Details (Hotfixes) ---
         elements.append(Paragraph("OS Update Details", section_style))
         hotfix_rows = []
         if data.hotfixes:
@@ -459,44 +572,36 @@ def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str 
                     hotfix_rows.append([Paragraph(f"Fix #{idx+1}", cell_b), Paragraph(str(hf), cell_n)])
         else:
             hotfix_rows.append([Paragraph("No installed hotfixes detected", cell_b), Paragraph("-", cell_n)])
-        # Mac address at end of hotfix section (matching sample)
-        hotfix_rows.append([Paragraph("Mac address", cell_b), Paragraph(data.mac_address, cell_n)])
         elements.append(build_table(hotfix_rows))
         elements.append(Spacer(1, 12))
 
-        # --- Drive Details ---
+        # --- 5. Drive Details ---
         elements.append(Paragraph("Drive Details", section_style))
         elements.append(build_table([
-            [Paragraph("DriveName", cell_b), Paragraph(data.drive_name, cell_n)],
+            [Paragraph("Drive Name", cell_b), Paragraph(data.drive_name, cell_n)],
         ]))
         elements.append(Spacer(1, 12))
 
-        # --- Compression utility details ---
-        elements.append(Paragraph("Compression utility details", section_style))
-        elements.append(build_table([
-            [Paragraph("DriveName", cell_b), Paragraph(data.drive_name, cell_n)],
-        ]))
-        elements.append(Spacer(1, 12))
-
-        # --- Antivirus ---
+        # --- 6. Antivirus ---
         elements.append(Paragraph("Antivirus", section_style))
         elements.append(build_table([
-            [Paragraph("DriveName", cell_b), Paragraph(av_str if av_str else data.drive_name, cell_n)],
+            [Paragraph("Antivirus Products", cell_b), Paragraph(av_str if av_str else "Not Detected", cell_n)],
         ]))
         elements.append(Spacer(1, 12))
 
-        # --- Printer Details ---
+        # --- 7. Printer Details ---
         elements.append(Paragraph("Printer Details", section_style))
         printer_rows = []
         if data.printers:
             for idx, p in enumerate(data.printers):
                 if isinstance(p, PrinterDetail):
+                    printer_type = get_printer_type(p.port_name)
                     printer_rows.append([Paragraph(str(idx + 1), cell_b), Paragraph("", cell_n)])
                     printer_rows.append([Paragraph("Name", cell_b), Paragraph(p.name, cell_n)])
-                    printer_rows.append([Paragraph("SystemName", cell_b), Paragraph(p.system_name, cell_n)])
-                    printer_rows.append([Paragraph("EnableBIDI", cell_b), Paragraph(p.enable_bidi, cell_n)])
-                    printer_rows.append([Paragraph("ExtendedPrinterStatus", cell_b), Paragraph(p.extended_printer_status, cell_n)])
-                    printer_rows.append([Paragraph("PortName", cell_b), Paragraph(p.port_name, cell_n)])
+                    printer_rows.append([Paragraph("Printer Type", cell_b), Paragraph(printer_type, cell_n)])
+                    printer_rows.append([Paragraph("System Name", cell_b), Paragraph(p.system_name, cell_n)])
+                    printer_rows.append([Paragraph("Enable BIDI", cell_b), Paragraph(p.enable_bidi, cell_n)])
+                    printer_rows.append([Paragraph("Port Name", cell_b), Paragraph(p.port_name, cell_n)])
                 else:
                     printer_rows.append([Paragraph(f"Printer #{idx+1}", cell_b), Paragraph(str(p), cell_n)])
             printer_rows.append([Paragraph("Total Printers Connected", cell_b), Paragraph(str(len(data.printers)), cell_n)])
@@ -505,58 +610,18 @@ def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str 
         elements.append(build_table(printer_rows))
         elements.append(Spacer(1, 12))
 
-        # --- System Information (systeminfo) ---
-        elements.append(Paragraph("System Information", section_style))
-        sysinfo_rows = [
-            [Paragraph("System Manufacturer", cell_b), Paragraph(data.system_manufacturer or "-", cell_n)],
-            [Paragraph("System Model", cell_b), Paragraph(data.system_model or "-", cell_n)],
-            [Paragraph("Processor", cell_b), Paragraph(data.processor or "-", cell_n)],
-            [Paragraph("Total Physical Memory", cell_b), Paragraph(data.total_physical_memory or "-", cell_n)],
-            [Paragraph("BIOS Version", cell_b), Paragraph(data.bios_version or "-", cell_n)],
-            [Paragraph("Domain", cell_b), Paragraph(data.domain or "-", cell_n)],
-            [Paragraph("Logon Server", cell_b), Paragraph(data.logon_server or "-", cell_n)],
-            [Paragraph("System Boot Time", cell_b), Paragraph(data.system_boot_time or "-", cell_n)],
-            [Paragraph("Time Zone", cell_b), Paragraph(data.time_zone or "-", cell_n)],
-            [Paragraph("Registered Owner", cell_b), Paragraph(data.registered_owner or "-", cell_n)],
-            [Paragraph("Windows Directory", cell_b), Paragraph(data.windows_directory or "-", cell_n)],
-        ]
-        elements.append(build_table(sysinfo_rows))
-        elements.append(Spacer(1, 12))
-
-        # --- Network Configuration (ipconfig /all) ---
-        elements.append(Paragraph("Network Configuration", section_style))
-        net_rows = []
-        if data.network_adapters:
-            for idx, adapter in enumerate(data.network_adapters):
-                if isinstance(adapter, NetworkAdapter):
-                    net_rows.append([Paragraph(f"Adapter {idx + 1}", cell_b), Paragraph(adapter.name, cell_n)])
-                    net_rows.append([Paragraph("Physical Address (MAC)", cell_b), Paragraph(adapter.mac_address or "-", cell_n)])
-                    net_rows.append([Paragraph("IPv4 Address", cell_b), Paragraph(adapter.ip_address or "-", cell_n)])
-                    net_rows.append([Paragraph("Subnet Mask", cell_b), Paragraph(adapter.subnet_mask or "-", cell_n)])
-                    net_rows.append([Paragraph("Default Gateway", cell_b), Paragraph(adapter.default_gateway or "-", cell_n)])
-                    net_rows.append([Paragraph("DHCP Enabled", cell_b), Paragraph(adapter.dhcp_enabled or "-", cell_n)])
-                    net_rows.append([Paragraph("DHCP Server", cell_b), Paragraph(adapter.dhcp_server or "-", cell_n)])
-                    net_rows.append([Paragraph("DNS Servers", cell_b), Paragraph(adapter.dns_servers or "-", cell_n)])
-                else:
-                    net_rows.append([Paragraph(f"Adapter #{idx+1}", cell_b), Paragraph(str(adapter), cell_n)])
-        else:
-            net_rows.append([Paragraph("No active network adapters found", cell_b), Paragraph("-", cell_n)])
-        elements.append(build_table(net_rows))
-
         doc.build(elements, onFirstPage=draw_page_decorations, onLaterPages=draw_page_decorations)
         logger.info(f"PDF compliance report successfully built: {pdf_path}")
     except Exception as e:
         logger.error(f"Failed to generate InfraPulse PDF Report: {e}")
-        generation_errors.append("PDF report generation failed")
+        generation_errors.append("PDF assortment report generation failed")
 
     # Build XML compliance document
     try:
         root = ET.Element("InfraPulseComplianceAudit", version="2.0.0")
 
-        meta = ET.SubElement(root, "BranchMetadata")
-        ET.SubElement(meta, "BranchName").text = branch_name
-        ET.SubElement(meta, "BranchCode").text = branch_code
-        ET.SubElement(meta, "OfficerName").text = officer_name
+        meta = ET.SubElement(root, "CollectionDetails")
+        ET.SubElement(meta, "CollectedBy").text = officer_name
 
         sys_xml = ET.SubElement(root, "WorkstationInventory")
         ET.SubElement(sys_xml, "ComputerName").text = data.computer_name
@@ -590,6 +655,9 @@ def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str 
                 ET.SubElement(a_el, "IPv4Address").text = adapter.ip_address
                 ET.SubElement(a_el, "SubnetMask").text = adapter.subnet_mask
                 ET.SubElement(a_el, "DefaultGateway").text = adapter.default_gateway
+                ET.SubElement(a_el, "IPv6Address").text = adapter.ipv6_address
+                ET.SubElement(a_el, "TemporaryIPv6Address").text = adapter.temp_ipv6_address
+                ET.SubElement(a_el, "LinkLocalIPv6Address").text = adapter.link_local_ipv6
                 ET.SubElement(a_el, "DHCPEnabled").text = adapter.dhcp_enabled
                 ET.SubElement(a_el, "DHCPServer").text = adapter.dhcp_server
                 ET.SubElement(a_el, "DNSServers").text = adapter.dns_servers
@@ -635,7 +703,7 @@ def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str 
                 "completed_at": datetime.now().isoformat(timespec="seconds")
             }
             save_sessions()
-        raise HTTPException(status_code=500, detail="Audit report generation failed.")
+        raise HTTPException(status_code=500, detail="Assortment report generation failed.")
 
     # Cache completion state and file references
     with session_lock:
@@ -643,8 +711,6 @@ def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str 
             **sessions.get(cid, {}),
             "status": "completed",
             "error": None,
-            "branch_name": branch_name,
-            "branch_code": branch_code,
             "officer_name": officer_name,
             "pdf_path": str(pdf_path),
             "xml_path": str(xml_path),
@@ -658,13 +724,13 @@ def upload_audit(data: AuditData, client_id: str = Query(...), audit_token: str 
 # 5. REPORT SERVING ENDPOINTS
 # ------------------------------------------------------------------------------
 @app.get("/download-report")
-def download_report(client_id: str = Query(...), format: str = Query("pdf"), portal_token: Optional[str] = Cookie(None)):
+def download_report(client_id: str = Query(...), report_format: str = Query("pdf", alias="format"), portal_token: Optional[str] = Cookie(None)):
     cid = validate_client_id(client_id)
     session = verify_portal_token(cid, portal_token)
     if session.get("status") != "completed":
-        raise HTTPException(status_code=404, detail="Audit report is not ready or has not been found.")
+        raise HTTPException(status_code=404, detail="Assortment report is not ready or has not been found.")
 
-    if format.lower() == "pdf":
+    if report_format.lower() == "pdf":
         file_value = session.get("pdf_path")
         if not file_value:
             raise HTTPException(status_code=404, detail="PDF report does not exist on disk.")
@@ -673,7 +739,7 @@ def download_report(client_id: str = Query(...), format: str = Query("pdf"), por
             raise HTTPException(status_code=404, detail="PDF report does not exist on disk.")
         return FileResponse(file_path, media_type="application/pdf", filename=os.path.basename(file_path))
 
-    elif format.lower() == "xml":
+    elif report_format.lower() == "xml":
         file_value = session.get("xml_path")
         if not file_value:
             raise HTTPException(status_code=404, detail="XML report does not exist on disk.")
@@ -684,3 +750,4 @@ def download_report(client_id: str = Query(...), format: str = Query("pdf"), por
 
     else:
         raise HTTPException(status_code=400, detail="Invalid report format. Use 'pdf' or 'xml'.")
+

@@ -4,63 +4,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>InfraPulse Enterprise Compliance Audit Portal</title>
+    <title>InfraPulse — System Data Collection Portal</title>
 
-    <!-- Premium Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
     <style>
         :root {
-            --bg-color: #0b0f19;
-            --card-bg: rgba(17, 24, 39, 0.7);
-            --card-border: rgba(255, 255, 255, 0.08);
-            --primary-accent: #00f2fe;
-            --secondary-accent: #4facfe;
-            --success-color: #10b981;
-            --text-main: #f3f4f6;
-            --text-muted: #9ca3af;
-            --crimson-red: #A80000;
+            --bg:           #f0f4f8;
+            --card-bg:      #ffffff;
+            --card-border:  #e2e8f0;
+            --blue-primary: #2563eb;
+            --blue-dark:    #1d4ed8;
+            --blue-light:   #eff6ff;
+            --blue-mid:     #bfdbfe;
+            --success:      #059669;
+            --success-bg:   #ecfdf5;
+            --success-mid:  #a7f3d0;
+            --warn-color:   #d97706;
+            --warn-bg:      #fffbeb;
+            --warn-mid:     #fde68a;
+            --error-color:  #dc2626;
+            --text-main:    #1e293b;
+            --text-sub:     #475569;
+            --text-muted:   #94a3b8;
+            --divider:      #e2e8f0;
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            background-color: var(--bg-color);
-            background-image: 
-                radial-gradient(at 10% 20%, rgba(0, 242, 254, 0.05) 0px, transparent 50%),
-                radial-gradient(at 90% 80%, rgba(79, 172, 254, 0.05) 0px, transparent 50%);
+            background-color: var(--bg);
+            background-image:
+                radial-gradient(at 15% 10%, rgba(37, 99, 235, 0.07) 0px, transparent 55%),
+                radial-gradient(at 85% 90%, rgba(37, 99, 235, 0.05) 0px, transparent 55%);
             font-family: 'Inter', sans-serif;
             color: var(--text-main);
             min-height: 100vh;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 20px;
-            overflow-x: hidden;
+            padding: 24px 16px;
         }
 
-        .container {
-            width: 100%;
-            max-width: 600px;
+        /* ── Top logo bar ── */
+        .top-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 24px;
         }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--blue-primary);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: #fff;
+            font-weight: 800;
+            letter-spacing: -1px;
+        }
+
+        .logo-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .logo-name span {
+            color: var(--blue-primary);
+        }
+
+        /* ── Card ── */
+        .container { width: 100%; max-width: 560px; }
 
         .card {
             background: var(--card-bg);
             border: 1px solid var(--card-border);
-            border-radius: 24px;
-            padding: 40px;
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4),
-                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 36px 40px;
+            box-shadow:
+                0 1px 3px rgba(0,0,0,0.06),
+                0 8px 24px rgba(37,99,235,0.07);
             text-align: center;
-            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             overflow: hidden;
         }
@@ -68,359 +100,370 @@
         .card::before {
             content: '';
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
+            top: 0; left: 0; right: 0;
             height: 4px;
-            background: linear-gradient(90deg, var(--crimson-red), var(--secondary-accent));
+            background: linear-gradient(90deg, var(--blue-primary), #60a5fa);
         }
 
+        /* ── Typography ── */
         h1 {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: 800;
-            letter-spacing: -0.5px;
-            margin-bottom: 8px;
-            background: linear-gradient(135deg, #ffffff 40%, var(--text-muted) 100%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: var(--text-main);
+            letter-spacing: -0.4px;
+            margin-bottom: 6px;
         }
 
         .subtitle {
-            font-size: 14px;
-            color: var(--text-muted);
+            font-size: 13px;
+            color: var(--text-sub);
             line-height: 1.6;
-            margin-bottom: 30px;
+            margin-bottom: 28px;
         }
 
-        /* TIN FC Form Controls */
-        .form-box {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 16px;
-            padding: 24px;
-            margin-bottom: 24px;
-            text-align: left;
-        }
-
-        .form-box-title {
-            font-size: 13px;
-            font-weight: 700;
-            color: var(--secondary-accent);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 16px;
-        }
-
-        .input-group {
-            margin-bottom: 14px;
-        }
-
-        .input-group:last-child {
-            margin-bottom: 0;
-        }
-
-        .input-group label {
-            display: block;
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--text-muted);
-            margin-bottom: 6px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .input-field {
-            width: 100%;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 10px 14px;
-            color: #ffffff;
-            font-size: 13px;
-            transition: all 0.3s ease;
-        }
-
-        .input-field:focus {
-            outline: none;
-            border-color: var(--secondary-accent);
-            box-shadow: 0 0 8px rgba(79, 172, 254, 0.2);
-        }
-
-        /* Status & Button Groups */
+        /* ── Status badge ── */
         .status-badge {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            background: rgba(245, 158, 11, 0.1);
-            border: 1px solid rgba(245, 158, 11, 0.25);
-            padding: 6px 14px;
+            gap: 7px;
+            background: var(--warn-bg);
+            border: 1px solid var(--warn-mid);
+            padding: 5px 14px;
             border-radius: 20px;
             font-size: 12px;
             font-weight: 600;
-            color: #fbbf24;
+            color: var(--warn-color);
             margin-bottom: 20px;
             transition: all 0.3s ease;
         }
 
         .status-dot {
-            width: 8px;
-            height: 8px;
-            background-color: #fbbf24;
+            width: 7px;
+            height: 7px;
+            background-color: var(--warn-color);
             border-radius: 50%;
             animation: pulse-dot 1.5s infinite;
         }
 
         .success-badge {
-            background: rgba(16, 185, 129, 0.15);
-            border-color: rgba(16, 185, 129, 0.3);
-            color: #34d399;
+            background: var(--success-bg);
+            border-color: var(--success-mid);
+            color: var(--success);
+        }
+        .success-badge .status-dot { background-color: var(--success); }
+
+        /* ── Form ── */
+        .form-box {
+            background: var(--blue-light);
+            border: 1px solid var(--blue-mid);
+            border-radius: 14px;
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: left;
         }
 
-        .success-badge .status-dot {
-            background-color: #34d399;
+        .form-box-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--blue-primary);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            margin-bottom: 14px;
         }
 
+        .input-group { margin-bottom: 12px; }
+        .input-group:last-child { margin-bottom: 0; }
+
+        .input-group label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-sub);
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        .input-field {
+            width: 100%;
+            background: #fff;
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 9px 13px;
+            color: var(--text-main);
+            font-size: 13px;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.2s ease;
+        }
+
+        .input-field:focus {
+            outline: none;
+            border-color: var(--blue-primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .input-field::placeholder { color: var(--text-muted); }
+
+        /* ── Buttons ── */
         .btn {
             display: inline-flex;
             align-items: center;
             justify-content: center;
+            gap: 8px;
             width: 100%;
-            background: linear-gradient(135deg, var(--crimson-red) 0%, #7f0000 100%);
+            background: var(--blue-primary);
             border: none;
-            border-radius: 12px;
-            padding: 14px 28px;
-            color: #ffffff;
+            border-radius: 10px;
+            padding: 13px 24px;
+            color: #fff;
             font-size: 14px;
             font-weight: 700;
+            font-family: 'Inter', sans-serif;
             text-decoration: none;
             cursor: pointer;
-            box-shadow: 0 4px 15px rgba(168, 0, 0, 0.3);
-            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+            transition: all 0.2s ease;
         }
 
         .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(168, 0, 0, 0.5);
+            background: var(--blue-dark);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
         }
 
-        .btn-xml {
-            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
-            box-shadow: 0 4px 15px rgba(55, 65, 81, 0.3);
-            margin-top: 10px;
+        .btn-secondary {
+            background: #fff;
+            color: var(--blue-primary);
+            border: 1.5px solid var(--blue-primary);
+            box-shadow: none;
         }
 
-        .btn-xml:hover {
-            box-shadow: 0 6px 20px rgba(55, 65, 81, 0.5);
+        .btn-secondary:hover {
+            background: var(--blue-light);
+            box-shadow: none;
         }
 
-        /* Instructions visual container */
-        .instructions-box {
-            background: rgba(255, 255, 255, 0.01);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 16px;
-            padding: 24px;
+        /* ── Steps box ── */
+        .steps-box {
+            background: #f8fafc;
+            border: 1px solid var(--divider);
+            border-radius: 14px;
+            padding: 20px;
             text-align: left;
-            margin-top: 24px;
+            margin-top: 20px;
         }
 
-        .instructions-box h3 {
-            font-size: 13px;
+        .steps-title {
+            font-size: 12px;
             font-weight: 700;
-            margin-bottom: 12px;
-            color: var(--text-main);
+            color: var(--text-sub);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 14px;
         }
 
         .step-item {
             display: flex;
+            align-items: flex-start;
             gap: 12px;
             margin-bottom: 12px;
-            font-size: 12px;
-            color: var(--text-muted);
-            line-height: 1.5;
+            font-size: 13px;
+            color: var(--text-sub);
+            line-height: 1.55;
         }
 
-        .step-item:last-child {
-            margin-bottom: 0;
-        }
+        .step-item:last-child { margin-bottom: 0; }
 
         .step-number {
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 20px;
-            height: 20px;
-            background: rgba(255, 255, 255, 0.05);
+            min-width: 22px;
+            height: 22px;
+            background: var(--blue-primary);
             border-radius: 50%;
             font-weight: 700;
-            color: var(--primary-accent);
-            flex-shrink: 0;
+            color: #fff;
             font-size: 10px;
+            flex-shrink: 0;
+            margin-top: 1px;
         }
 
-        /* Neon Loader Spinner */
+        /* ── Spinner ── */
         .loader-spinner {
-            width: 60px;
-            height: 60px;
-            border: 4px solid rgba(0, 242, 254, 0.08);
-            border-top: 4px solid var(--primary-accent);
+            width: 52px;
+            height: 52px;
+            border: 4px solid var(--blue-mid);
+            border-top: 4px solid var(--blue-primary);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
-            position: relative;
-            box-shadow: 0 0 15px rgba(0, 242, 254, 0.15);
         }
 
-        /* Animated Success Checkmark */
+        /* ── Success ring ── */
         .success-ring {
-            width: 70px;
-            height: 70px;
+            width: 68px;
+            height: 68px;
             border-radius: 50%;
-            background: rgba(16, 185, 129, 0.1);
-            border: 2px solid var(--success-color);
+            background: var(--success-bg);
+            border: 2px solid var(--success);
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 24px auto;
-            box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+            margin: 0 auto 20px auto;
         }
 
         .success-icon {
-            font-size: 32px;
-            color: var(--success-color);
+            font-size: 30px;
+            color: var(--success);
             font-weight: bold;
         }
 
-        /* Animations */
-        @keyframes spin {
-            100% {
-                transform: rotate(360deg);
-            }
+        /* ── Info box ── */
+        .info-box {
+            background: #f8fafc;
+            border: 1px solid var(--divider);
+            border-radius: 12px;
+            padding: 16px 20px;
+            text-align: left;
+            margin-top: 16px;
         }
+
+        .info-box-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-sub);
+            margin-bottom: 6px;
+        }
+
+        /* ── Processing box ── */
+        .process-box {
+            background: var(--blue-light);
+            border: 1px solid var(--blue-mid);
+            border-radius: 12px;
+            padding: 18px 20px;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        /* ── Divider ── */
+        .divider {
+            height: 1px;
+            background: var(--divider);
+            margin: 20px 0;
+        }
+
+        /* ── Animations ── */
+        @keyframes spin { 100% { transform: rotate(360deg); } }
 
         @keyframes pulse-dot {
             0%, 100% { opacity: 0.4; }
             50% { opacity: 1; }
         }
 
-        /* Fade transitions */
-        .fade-in {
-            animation: fadeIn 0.8s forwards ease-out;
-        }
+        .fade-in { animation: fadeIn 0.6s forwards ease-out; }
 
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(15px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(12px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Footer ── */
+        .page-footer {
+            margin-top: 20px;
+            font-size: 11px;
+            color: var(--text-muted);
         }
     </style>
 </head>
 
 <body>
 
+    <!-- Top logo -->
+    <div class="top-bar fade-in">
+        <div class="logo-icon">IP</div>
+        <div class="logo-name"><span>Infra</span>Pulse</div>
+    </div>
+
     <div class="container fade-in">
         <div class="card" id="mainCard">
-            <!-- Active State -->
+
+            <!-- ── ACTIVE STATE ── -->
             <div id="activeState">
                 <div class="status-badge" id="statusBadge">
                     <span class="status-dot" id="statusDot"></span>
-                    <span id="statusText">Waiting for System Scan...</span>
+                    <span id="statusText">Ready to Scan</span>
                 </div>
 
-                <!-- 1. Initial Configuration View -->
+                <!-- Setup View -->
                 <div id="setupView">
-                    <h1>InfraPulse Compliance Audit Portal</h1>
-                    <p class="subtitle">Securely verify your branch systems to generate the official InfraPulse-compliant compliance audit & inventory report.</p>
+                    <h1>Workstation System Data Collection</h1>
+                    <p class="subtitle">Securely captures hardware, software, network, and OS inventory data from this workstation and generates a structured report for IT administration.</p>
 
-                    <!-- TIN FC Branch configuration fields -->
                     <div class="form-box">
-                        <div class="form-box-title">📋 Branch Configuration</div>
+                        <div class="form-box-title">Auditor Details</div>
                         <div class="input-group">
-                            <label for="branchName">Branch Name</label>
-                            <input type="text" id="branchName" class="input-field" placeholder="Enter branch name" value="">
-                        </div>
-                        <div class="input-group">
-                            <label for="branchCode">Branch Code</label>
-                            <input type="text" id="branchCode" class="input-field" placeholder="Enter branch code" value="">
-                        </div>
-                        <div class="input-group">
-                            <label for="officerName">User Name</label>
-                            <input type="text" id="officerName" class="input-field" placeholder="Enter user name" value="">
+                            <label for="officerName">Full Name</label>
+                            <input type="text" id="officerName" class="input-field" placeholder="Enter your full name">
                         </div>
                     </div>
 
-                    <div style="margin: 24px 0;">
-                        <a href="#" class="btn" id="downloadBtn" onclick="triggerScanDownload(event)">
-                            📥 Start Compliance Audit
-                        </a>
-                    </div>
+                    <a href="#" class="btn" id="downloadBtn" onclick="triggerScanDownload(event)">
+                        Begin System Data Collection
+                    </a>
 
-                    <div class="instructions-box">
-                        <h3>💡 Quick Verification Steps</h3>
+                    <div class="steps-box">
+                        <div class="steps-title">How it works</div>
                         <div class="step-item">
                             <span class="step-number">1</span>
-                            <span>Verify or adjust the <b>Branch Configuration</b> details above.</span>
+                            <span>Enter your <b>full name</b> in the field above.</span>
                         </div>
                         <div class="step-item">
                             <span class="step-number">2</span>
-                            <span>Click the <b>"Start Compliance Audit"</b> button to download your secure launcher.</span>
+                            <span>Click <b>Begin System Data Collection</b> — a secure data collector will download automatically.</span>
                         </div>
                         <div class="step-item" id="step3Windows">
                             <span class="step-number">3</span>
-                            <span>Double-click the downloaded <b>verify_system.bat</b> file. It runs <b>completely silently in the background</b> and this page updates automatically!</span>
+                            <span>Run the downloaded <b>.bat file</b> — it collects hardware, OS, network, and software data silently. This page updates when done.</span>
                         </div>
                         <div class="step-item" id="step3Unix" style="display:none;">
                             <span class="step-number">3</span>
-                            <span>Open a Terminal, run: <code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;">chmod +x verify_system.sh && ./verify_system.sh</code> — this page updates automatically when done.</span>
+                            <span>Open Terminal and run: <code style="background:#e0e7ff;color:#2563eb;padding:2px 6px;border-radius:4px;font-size:12px;">chmod +x verify_system.sh && ./verify_system.sh</code></span>
                         </div>
                     </div>
                 </div>
 
-                <!-- 2. Real-time Processing / Loading View -->
-                <div id="processingView" style="display: none;">
-                    <h1 style="background: linear-gradient(135deg, #ffffff 30%, #38bdf8 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-size: 26px;">
-                        Audit In Progress...
-                    </h1>
-                    <p class="subtitle" style="margin-top: 8px; margin-bottom: 30px; font-size: 13px;">
-                        Secure diagnostic scan is executing on your workstation.
+                <!-- Processing View -->
+                <div id="processingView" style="display:none;">
+                    <h1 style="color: var(--blue-primary);">Data Collection in Progress</h1>
+                    <p class="subtitle" style="margin-top:6px; margin-bottom:28px;">
+                        Gathering hardware, network, OS, and software inventory from this workstation. Please wait...
                     </p>
 
-                    <!-- Clean Central Neon Spinner Loader -->
-                    <div style="display: flex; justify-content: center; margin: 36px 0;">
+                    <div style="display:flex; justify-content:center; margin: 32px 0;">
                         <div class="loader-spinner"></div>
                     </div>
 
-                    <!-- Single Simple Instruction Card -->
-                    <div class="instructions-box" style="border-color: rgba(56, 189, 248, 0.25); background: rgba(56, 189, 248, 0.02); text-align: center; padding: 18px 24px; border-radius: 12px;">
-                        <div id="processingInstructionsWindows">
-                            <p style="font-size: 14px; color: var(--text-main); font-weight: 500; line-height: 1.6; margin: 0;">
-                                👇 Please click on the downloaded <b>verify_system.bat</b> file in your browser's download bar to start the background scan.
-                            </p>
-                            <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 8px; margin-bottom: 0;">
-                                It will run completely silently in the background. Once the secure upload completes, this page will update automatically!
-                            </p>
-                        </div>
-                        <div id="processingInstructionsUnix" style="display:none;">
-                            <p style="font-size: 14px; color: var(--text-main); font-weight: 500; line-height: 1.6; margin: 0;">
-                                👇 Open a Terminal and run the downloaded script:
-                            </p>
-                            <p style="font-size: 13px; color: #38bdf8; font-family: monospace; background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: 6px; margin-top: 10px; margin-bottom: 0;">
-                                chmod +x verify_system.sh &amp;&amp; ./verify_system.sh
-                            </p>
-                            <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 8px; margin-bottom: 0;">
-                                Once the secure upload completes, this page will update automatically!
-                            </p>
-                        </div>
+                    <div class="process-box" id="processingInstructionsWindows">
+                        <p style="font-size:13px; color:var(--blue-primary); font-weight:600; margin-bottom:6px;">Action Required</p>
+                        <p style="font-size:13px; color:var(--text-sub); line-height:1.6; margin:0;">
+                            Click the downloaded <b>verify_system.bat</b> file in your browser's download bar to begin data collection. This page updates automatically when complete.
+                        </p>
+                    </div>
+
+                    <div class="process-box" id="processingInstructionsUnix" style="display:none;">
+                        <p style="font-size:13px; color:var(--blue-primary); font-weight:600; margin-bottom:8px;">Open Terminal & Run</p>
+                        <code style="display:block; background:#fff; border:1px solid var(--blue-mid); border-radius:8px; padding:10px 14px; font-size:12px; color:var(--blue-dark); text-align:left;">
+                            chmod +x verify_system.sh &amp;&amp; ./verify_system.sh
+                        </code>
+                        <p style="font-size:12px; color:var(--text-muted); margin-top:8px; margin-bottom:0;">
+                            This page updates automatically once the scan completes.
+                        </p>
                     </div>
                 </div>
             </div>
 
-            <!-- Success State -->
-            <div id="successState" style="display: none;">
+            <!-- ── SUCCESS STATE ── -->
+            <div id="successState" style="display:none;">
                 <div class="status-badge success-badge">
                     <span class="status-dot"></span>
                     Audit Complete
@@ -430,36 +473,36 @@
                     <span class="success-icon">✓</span>
                 </div>
 
-                <h1 style="background: linear-gradient(135deg, #ffffff 30%, #34d399 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">
-                    Audit Successful!
-                </h1>
-                
-                <p class="subtitle" style="margin-top: 10px; margin-bottom: 24px;">
-                    Your enterprise system audit & compliance report has been securely compiled.
+                <h1>Data Collection Complete</h1>
+                <p class="subtitle" style="margin-top:8px; margin-bottom:24px;">
+                    Workstation inventory data has been successfully captured and your report is ready.
                 </p>
 
-                <!-- Dual PDF / XML Download Buttons -->
-                <div style="margin: 20px 0; display: flex; flex-direction: column; gap: 10px;">
+                <div class="divider"></div>
+
+                <div style="display:flex; flex-direction:column; gap:10px;">
                     <a href="#" id="downloadPdfBtn" class="btn" target="_blank">
-                        📥 Download InfraPulse PDF Report
+                        Download System Report (PDF)
                     </a>
-                    <a href="#" id="downloadXmlBtn" class="btn btn-xml" target="_blank">
-                        📄 Export XML Compliance Data
+                    <a href="#" id="downloadXmlBtn" class="btn btn-secondary" target="_blank">
+                        Export Inventory Data (XML)
                     </a>
                 </div>
 
-                <div class="instructions-box" style="margin-top: 15px; border-color: rgba(16, 185, 129, 0.2); background: rgba(16, 185, 129, 0.02);">
-                    <h3 style="color: #34d399;">✓ Reports Saved in Backend</h3>
-                    <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">
-                        A beautifully formatted, InfraPulse-compliant inspection PDF and structured XML compliance inventory data have been securely stored. You can safely exit this portal.
+                <div class="info-box">
+                    <div class="info-box-title" style="color:var(--success);">Data Saved Successfully</div>
+                    <p style="font-size:13px; color:var(--text-sub); line-height:1.6; margin:0;">
+                        A full workstation inventory report (PDF) and structured data export (XML) have been securely stored on the server for IT administration.
                     </p>
                 </div>
             </div>
+
         </div>
     </div>
 
+    <div class="page-footer fade-in">InfraPulse Compliance Platform &nbsp;·&nbsp; v2.0.0</div>
+
     <script>
-        // Detect client OS
         function detectOS() {
             const ua = navigator.userAgent || '';
             if (/Mac|Darwin/i.test(ua) && !/iPhone|iPad/.test(ua)) return 'mac';
@@ -469,74 +512,62 @@
         const clientOS = detectOS();
         const isUnix = clientOS === 'linux' || clientOS === 'mac';
 
-        // Show OS-appropriate instructions on load
         if (isUnix) {
             document.getElementById('step3Windows').style.display = 'none';
             document.getElementById('step3Unix').style.display = 'flex';
         }
 
-        // Extract or generate a unique Client Session ID
         const urlParams = new URLSearchParams(window.location.search);
         let clientId = urlParams.get('client_id');
-
         if (!clientId) {
-            clientId = 'audit_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+            clientId = 'asrt_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
             const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?client_id=' + clientId;
             window.history.pushState({ path: newUrl }, '', newUrl);
         }
 
-        // Dynamically compute and set download URL on click/hover
         const downloadBtn = document.getElementById('downloadBtn');
 
         function updateDownloadUrl() {
-            const bName = document.getElementById('branchName').value;
-            const bCode = document.getElementById('branchCode').value;
             const oName = document.getElementById('officerName').value;
-
-            downloadBtn.href = `/download-vbs?client_id=${clientId}&os=${clientOS}&branch_name=${encodeURIComponent(bName)}&branch_code=${encodeURIComponent(bCode)}&officer_name=${encodeURIComponent(oName)}`;
+            downloadBtn.href = `/download-vbs?client_id=${clientId}&os=${clientOS}&officer_name=${encodeURIComponent(oName)}`;
         }
 
-        // Run URL builder on interaction
         downloadBtn.addEventListener('mouseenter', updateDownloadUrl);
         downloadBtn.addEventListener('mousedown', updateDownloadUrl);
 
         function triggerScanDownload(event) {
-            if (event) {
-                event.preventDefault();
-            }
+            if (event) event.preventDefault();
             updateDownloadUrl();
+
+            // Use iframe — browser handles cookie + file download together
             const downloadFrame = document.createElement('iframe');
             downloadFrame.style.display = 'none';
             downloadFrame.src = downloadBtn.href;
             document.body.appendChild(downloadFrame);
-            setTimeout(() => downloadFrame.remove(), 10000);
+            setTimeout(() => downloadFrame.remove(), 15000);
 
-            // Fast transition to loading/processing state
-            setTimeout(() => {
-                showProcessingState();
-            }, 800);
+            // Give browser time to receive Set-Cookie from /download-vbs
+            setTimeout(() => showProcessingState(), 1500);
         }
 
         function showProcessingState() {
-            // Show OS-appropriate processing instructions
             if (isUnix) {
                 document.getElementById('processingInstructionsWindows').style.display = 'none';
                 document.getElementById('processingInstructionsUnix').style.display = 'block';
             }
-            const setupView = document.getElementById('setupView');
+
+            const setupView    = document.getElementById('setupView');
             const processingView = document.getElementById('processingView');
-            const statusBadge = document.getElementById('statusBadge');
-            const statusDot = document.getElementById('statusDot');
-            const statusText = document.getElementById('statusText');
+            const statusBadge  = document.getElementById('statusBadge');
+            const statusDot    = document.getElementById('statusDot');
+            const statusText   = document.getElementById('statusText');
 
-            // Set badge theme to blue processing state
-            statusBadge.style.background = 'rgba(56, 189, 248, 0.15)';
-            statusBadge.style.borderColor = 'rgba(56, 189, 248, 0.3)';
-            statusBadge.style.color = '#38bdf8';
-            statusDot.style.backgroundColor = '#38bdf8';
-            statusText.innerText = 'Audit In Progress...';
+            statusBadge.style.background   = '#eff6ff';
+            statusBadge.style.borderColor  = '#bfdbfe';
+            statusBadge.style.color        = '#2563eb';
+            statusDot.style.backgroundColor = '#2563eb';
+            statusText.innerText = 'Scan Running...';
 
-            // Fade out setup view
             setupView.style.opacity = '0';
             setupView.style.transition = 'opacity 0.3s ease';
 
@@ -545,43 +576,65 @@
                 processingView.style.display = 'block';
                 processingView.style.opacity = '0';
                 processingView.style.transition = 'opacity 0.4s ease';
-
-                processingView.offsetHeight; // force reflow
+                processingView.offsetHeight;
                 processingView.style.opacity = '1';
-
-                // Start status polling
-                startPolling();
+                startSSE();
             }, 300);
+        }
+
+        function handleStatusUpdate(data) {
+            if (data.status === 'completed') {
+                showSuccessState();
+                return true;
+            } else if (data.status === 'failed') {
+                document.getElementById('statusText').innerText = 'Collection Failed';
+                document.getElementById('statusBadge').style.background   = '#fef2f2';
+                document.getElementById('statusBadge').style.borderColor  = '#fecaca';
+                document.getElementById('statusBadge').style.color        = '#dc2626';
+                return true;
+            }
+            return false;
         }
 
         function startPolling() {
             const pollInterval = setInterval(() => {
-                fetch(`/check-status?client_id=${clientId}`)
-                    .then(response => response.json())
+                fetch(`/check-status?client_id=${clientId}`, { credentials: 'include' })
+                    .then(r => r.json())
                     .then(data => {
-                        if (data.status === 'completed') {
-                            clearInterval(pollInterval);
-                            showSuccessState();
-                        } else if (data.status === 'failed') {
-                            clearInterval(pollInterval);
-                            document.getElementById('statusText').innerText = 'Audit Failed';
-                            document.getElementById('statusBadge').style.background = 'rgba(168, 0, 0, 0.15)';
-                            document.getElementById('statusBadge').style.borderColor = 'rgba(168, 0, 0, 0.3)';
-                            document.getElementById('statusBadge').style.color = '#f87171';
-                        }
+                        if (handleStatusUpdate(data)) clearInterval(pollInterval);
                     })
-                    .catch(err => console.error('Polling error:', err));
+                    .catch(() => {});
             }, 2000);
         }
 
-        function showSuccessState() {
-            const mainCard = document.getElementById('mainCard');
-            const activeState = document.getElementById('activeState');
-            const successState = document.getElementById('successState');
+        function startSSE(retries) {
+            if (retries === undefined) retries = 0;
+            const es = new EventSource(`/events?client_id=${clientId}`);
 
-            // Configure dynamic report links
+            es.onmessage = function(e) {
+                let data;
+                try { data = JSON.parse(e.data); } catch { return; }
+                handleStatusUpdate(data);
+            };
+
+            es.onerror = function() {
+                es.close();
+                if (retries < 3) {
+                    // Retry SSE a few times
+                    setTimeout(() => startSSE(retries + 1), 2000);
+                } else {
+                    // SSE not working — fall back to polling
+                    startPolling();
+                }
+            };
+        }
+
+        function showSuccessState() {
             document.getElementById('downloadPdfBtn').href = `/download-report?client_id=${clientId}&format=pdf`;
             document.getElementById('downloadXmlBtn').href = `/download-report?client_id=${clientId}&format=xml`;
+
+            const activeState  = document.getElementById('activeState');
+            const successState = document.getElementById('successState');
 
             activeState.style.opacity = '0';
             activeState.style.transition = 'opacity 0.4s ease';
@@ -591,12 +644,10 @@
                 successState.style.display = 'block';
                 successState.style.opacity = '0';
                 successState.style.transition = 'opacity 0.6s ease';
-
-                successState.offsetHeight; // force reflow
+                successState.offsetHeight;
                 successState.style.opacity = '1';
             }, 400);
         }
     </script>
 </body>
-
 </html>
