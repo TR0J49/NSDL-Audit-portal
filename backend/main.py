@@ -167,6 +167,157 @@ class NetworkAdapter(BaseModel):
     temp_ipv6_address: str = ""
     link_local_ipv6: str = ""
 
+class DiskInfo(BaseModel):
+    drive: str = ""
+    total: str = ""
+    used: str = ""
+    free: str = ""
+
+class InstalledApp(BaseModel):
+    name: str = ""
+    version: str = ""
+    publisher: str = ""
+
+class LocalUser(BaseModel):
+    name: str = ""
+    enabled: str = "True"
+    admin: str = "False"
+
+class RunningService(BaseModel):
+    name: str = ""
+    display_name: str = ""
+    start_type: str = ""
+
+class OpenPort(BaseModel):
+    port: str = ""
+    protocol: str = ""
+    pid: str = ""
+
+class SecurityPosture(BaseModel):
+    bitlocker: str = ""
+    windows_firewall: str = ""
+    uac_enabled: str = ""
+    filevault: str = ""
+    gatekeeper: str = ""
+    sip: str = ""
+    apparmor: str = ""
+    selinux: str = ""
+
+class DockerInfo(BaseModel):
+    version: str = ""
+    running_containers: int = 0
+    containers: List[str] = []
+
+    @validator('running_containers', pre=True, allow_reuse=True)
+    def coerce_containers_count(cls, v):
+        try: return int(v)
+        except: return 0
+
+
+class RunningProcess(BaseModel):
+    pid: str = ""
+    name: str = ""
+    parent_pid: str = ""
+    user: str = ""
+    path: str = ""
+    cpu: str = ""
+    memory: str = ""
+
+class SslCertificate(BaseModel):
+    subject: str = ""
+    issuer: str = ""
+    expiry: str = ""
+    thumbprint: str = ""
+
+class BrowserExtension(BaseModel):
+    browser: str = ""
+    name: str = ""
+    version: str = ""
+    extension_id: str = ""
+
+class EventLogEntry(BaseModel):
+    time: str = ""
+    level: str = ""
+    source: str = ""
+    message: str = ""
+
+class GpuInfo(BaseModel):
+    name: str = ""
+    driver_version: str = ""
+    vram: str = ""
+
+class BatteryInfo(BaseModel):
+    name: str = ""
+    status: str = ""
+    estimated_charge: str = ""
+
+class LocalGroup(BaseModel):
+    name: str = ""
+    description: str = ""
+    members: str = ""
+
+class StartupItem(BaseModel):
+    name: str = ""
+    command: str = ""
+    location: str = ""
+    user: str = ""
+
+class NetworkConnection(BaseModel):
+    protocol: str = ""
+    local_address: str = ""
+    local_port: str = ""
+    remote_address: str = ""
+    remote_port: str = ""
+    state: str = ""
+    pid: str = ""
+
+class RouteEntry(BaseModel):
+    destination: str = ""
+    gateway: str = ""
+    interface: str = ""
+    metric: str = ""
+
+class FilesystemEntry(BaseModel):
+    device: str = ""
+    mount_point: str = ""
+    fs_type: str = ""
+    total: str = ""
+    used: str = ""
+    free: str = ""
+    use_percent: str = ""
+
+class FileIntegrityEntry(BaseModel):
+    path: str = ""
+    sha256: str = ""
+    size: str = ""
+    modified: str = ""
+
+class ProcessEvent(BaseModel):
+    time: str = ""
+    pid: str = ""
+    parent_pid: str = ""
+    process_name: str = ""
+    command_line: str = ""
+    user: str = ""
+
+class SecurityPolicy(BaseModel):
+    min_password_length: str = ""
+    password_complexity: str = ""
+    lockout_threshold: str = ""
+    screen_lock_timeout: str = ""
+    auto_updates_enabled: str = ""
+    remote_login_enabled: str = ""
+    antivirus_enabled: str = ""
+    antivirus_definitions: str = ""
+
+class ContainerImage(BaseModel):
+    repository: str = ""
+    tag: str = ""
+    image_id: str = ""
+    size: str = ""
+    created: str = ""
+
+
 class AssortmentData(BaseModel):
     computer_name: str
     os_name: str
@@ -191,6 +342,38 @@ class AssortmentData(BaseModel):
     time_zone: str = ""
     registered_owner: str = ""
     windows_directory: str = ""
+    # extended fields
+    disk_info: List[DiskInfo] = []
+    installed_apps: List[InstalledApp] = []
+    local_users: List[LocalUser] = []
+    running_services: List[RunningService] = []
+    open_ports: List[OpenPort] = []
+    security_posture: Optional[SecurityPosture] = None
+    docker_info: Optional[DockerInfo] = None
+    running_processes: List[RunningProcess] = []
+    ssl_certificates: List[SslCertificate] = []
+    browser_extensions: List[BrowserExtension] = []
+    event_logs: List[EventLogEntry] = []
+    # Hardware Inventory extensions
+    gpu_info: List[GpuInfo] = []
+    battery_info: Optional[BatteryInfo] = None
+    # Users and Groups
+    local_groups: List[LocalGroup] = []
+    # Services and Startup Items
+    startup_items: List[StartupItem] = []
+    # Network extensions
+    network_connections: List[NetworkConnection] = []
+    routing_table: List[RouteEntry] = []
+    # Disk filesystem extended
+    filesystem_info: List[FilesystemEntry] = []
+    # File-Integrity Monitoring
+    file_integrity: List[FileIntegrityEntry] = []
+    # Process-Event Monitoring
+    process_events: List[ProcessEvent] = []
+    # Security Policy
+    security_policy: Optional[SecurityPolicy] = None
+    # Container Images
+    container_images: List[ContainerImage] = []
 
     @validator('antivirus', pre=True, allow_reuse=True)
     def coerce_antivirus(cls, v):
@@ -239,6 +422,164 @@ class AssortmentData(BaseModel):
                     result.append(item)
             return result
         return [v]
+
+    @validator('disk_info', pre=True, allow_reuse=True)
+    def coerce_disk_info(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [DiskInfo(**{k: str(val) for k, val in item.items() if k in DiskInfo.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('installed_apps', pre=True, allow_reuse=True)
+    def coerce_installed_apps(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [InstalledApp(**{k: str(val) for k, val in item.items() if k in InstalledApp.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('local_users', pre=True, allow_reuse=True)
+    def coerce_local_users(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [LocalUser(**{k: str(val) for k, val in item.items() if k in LocalUser.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('running_services', pre=True, allow_reuse=True)
+    def coerce_running_services(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [RunningService(**{k: str(val) for k, val in item.items() if k in RunningService.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('open_ports', pre=True, allow_reuse=True)
+    def coerce_open_ports(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [OpenPort(**{k: str(val) for k, val in item.items() if k in OpenPort.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('security_posture', pre=True, allow_reuse=True)
+    def coerce_security_posture(cls, v):
+        if not v: return None
+        if isinstance(v, dict):
+            return SecurityPosture(**{k: str(val) for k, val in v.items() if k in SecurityPosture.__fields__})
+        return v
+
+    @validator('docker_info', pre=True, allow_reuse=True)
+    def coerce_docker_info(cls, v):
+        if not v: return None
+        if isinstance(v, dict):
+            return DockerInfo(
+                version=str(v.get("version", "")),
+                running_containers=int(v.get("running_containers", 0)),
+                containers=[str(c) for c in v.get("containers", []) if c]
+            )
+        return v
+
+    @validator('running_processes', pre=True, allow_reuse=True)
+    def coerce_running_processes(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [RunningProcess(**{k: str(val) for k, val in item.items() if k in RunningProcess.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('ssl_certificates', pre=True, allow_reuse=True)
+    def coerce_ssl_certificates(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [SslCertificate(**{k: str(val) for k, val in item.items() if k in SslCertificate.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('browser_extensions', pre=True, allow_reuse=True)
+    def coerce_browser_extensions(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [BrowserExtension(**{k: str(val) for k, val in item.items() if k in BrowserExtension.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('event_logs', pre=True, allow_reuse=True)
+    def coerce_event_logs(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [EventLogEntry(**{k: str(val) for k, val in item.items() if k in EventLogEntry.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('gpu_info', pre=True, allow_reuse=True)
+    def coerce_gpu_info(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [GpuInfo(**{k: str(val) for k, val in item.items() if k in GpuInfo.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('battery_info', pre=True, allow_reuse=True)
+    def coerce_battery_info(cls, v):
+        if not v: return None
+        if isinstance(v, dict):
+            return BatteryInfo(**{k: str(val) for k, val in v.items() if k in BatteryInfo.__fields__})
+        return v
+
+    @validator('local_groups', pre=True, allow_reuse=True)
+    def coerce_local_groups(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [LocalGroup(**{k: str(val) for k, val in item.items() if k in LocalGroup.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('startup_items', pre=True, allow_reuse=True)
+    def coerce_startup_items(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [StartupItem(**{k: str(val) for k, val in item.items() if k in StartupItem.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('network_connections', pre=True, allow_reuse=True)
+    def coerce_network_connections(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [NetworkConnection(**{k: str(val) for k, val in item.items() if k in NetworkConnection.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('routing_table', pre=True, allow_reuse=True)
+    def coerce_routing_table(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [RouteEntry(**{k: str(val) for k, val in item.items() if k in RouteEntry.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('filesystem_info', pre=True, allow_reuse=True)
+    def coerce_filesystem_info(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [FilesystemEntry(**{k: str(val) for k, val in item.items() if k in FilesystemEntry.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('file_integrity', pre=True, allow_reuse=True)
+    def coerce_file_integrity(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [FileIntegrityEntry(**{k: str(val) for k, val in item.items() if k in FileIntegrityEntry.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('process_events', pre=True, allow_reuse=True)
+    def coerce_process_events(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [ProcessEvent(**{k: str(val) for k, val in item.items() if k in ProcessEvent.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
+
+    @validator('security_policy', pre=True, allow_reuse=True)
+    def coerce_security_policy(cls, v):
+        if not v: return None
+        if isinstance(v, dict):
+            return SecurityPolicy(**{k: str(val) for k, val in v.items() if k in SecurityPolicy.__fields__})
+        return v
+
+    @validator('container_images', pre=True, allow_reuse=True)
+    def coerce_container_images(cls, v):
+        if not v: return []
+        if isinstance(v, list):
+            return [ContainerImage(**{k: str(val) for k, val in item.items() if k in ContainerImage.__fields__}) if isinstance(item, dict) else item for item in v]
+        return []
 
 # ------------------------------------------------------------------------------
 # 2. CORE SYSTEM ROUTING & SILENT VBS LAUNCHERS
@@ -610,6 +951,286 @@ def upload_assortment(data: AssortmentData, client_id: str = Query(...), assortm
         elements.append(build_table(printer_rows))
         elements.append(Spacer(1, 12))
 
+        # --- 8. Disk Information ---
+        elements.append(Paragraph("Disk Information", section_style))
+        disk_rows = []
+        if data.disk_info:
+            disk_rows.append([Paragraph("Drive", cell_b), Paragraph("Total / Used / Free", cell_b)])
+            for d in data.disk_info:
+                disk_rows.append([Paragraph(d.drive, cell_n), Paragraph(f"{d.total} total  |  {d.used} used  |  {d.free} free", cell_n)])
+        else:
+            disk_rows.append([Paragraph("No disk information collected", cell_b), Paragraph("-", cell_n)])
+        elements.append(build_table(disk_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 9. Local User Accounts ---
+        elements.append(Paragraph("Local User Accounts", section_style))
+        user_rows = [[Paragraph("Username", cell_b), Paragraph("Enabled / Admin", cell_b)]]
+        if data.local_users:
+            for u in data.local_users:
+                user_rows.append([Paragraph(u.name, cell_n), Paragraph(f"Enabled: {u.enabled}  |  Admin: {u.admin}", cell_n)])
+        else:
+            user_rows = [[Paragraph("No local user data collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(user_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 10. Running Services ---
+        elements.append(Paragraph("Running Services", section_style))
+        svc_rows = [[Paragraph("Service Name", cell_b), Paragraph("Start Type", cell_b)]]
+        if data.running_services:
+            for svc in data.running_services:
+                label = svc.display_name if svc.display_name and svc.display_name != svc.name else svc.name
+                svc_rows.append([Paragraph(label, cell_n), Paragraph(svc.start_type or "-", cell_n)])
+        else:
+            svc_rows = [[Paragraph("No running services collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(svc_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 11. Open Ports ---
+        elements.append(Paragraph("Open / Listening Ports", section_style))
+        port_rows = [[Paragraph("Port", cell_b), Paragraph("Protocol", cell_b)]]
+        if data.open_ports:
+            for op in data.open_ports:
+                port_rows.append([Paragraph(op.port, cell_n), Paragraph(op.protocol or "-", cell_n)])
+        else:
+            port_rows = [[Paragraph("No open port data collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(port_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 12. Security Posture ---
+        elements.append(Paragraph("Security Posture", section_style))
+        sp = data.security_posture
+        sec_rows = []
+        if sp:
+            if sp.bitlocker:        sec_rows.append([Paragraph("BitLocker", cell_b),        Paragraph(sp.bitlocker, cell_n)])
+            if sp.windows_firewall: sec_rows.append([Paragraph("Windows Firewall", cell_b), Paragraph(sp.windows_firewall, cell_n)])
+            if sp.uac_enabled:      sec_rows.append([Paragraph("UAC Enabled", cell_b),      Paragraph(sp.uac_enabled, cell_n)])
+            if sp.filevault:        sec_rows.append([Paragraph("FileVault", cell_b),         Paragraph(sp.filevault, cell_n)])
+            if sp.gatekeeper:       sec_rows.append([Paragraph("Gatekeeper", cell_b),        Paragraph(sp.gatekeeper, cell_n)])
+            if sp.sip:              sec_rows.append([Paragraph("System Integrity Protection (SIP)", cell_b), Paragraph(sp.sip, cell_n)])
+            if sp.apparmor:         sec_rows.append([Paragraph("AppArmor", cell_b),          Paragraph(sp.apparmor, cell_n)])
+            if sp.selinux:          sec_rows.append([Paragraph("SELinux", cell_b),           Paragraph(sp.selinux, cell_n)])
+        if not sec_rows:
+            sec_rows.append([Paragraph("No security posture data collected", cell_b), Paragraph("-", cell_n)])
+        elements.append(build_table(sec_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 13. Docker ---
+        elements.append(Paragraph("Docker / Containers", section_style))
+        di = data.docker_info
+        docker_rows = []
+        if di and di.version:
+            docker_rows.append([Paragraph("Docker Version", cell_b), Paragraph(di.version, cell_n)])
+            docker_rows.append([Paragraph("Running Containers", cell_b), Paragraph(str(di.running_containers), cell_n)])
+            if di.containers:
+                docker_rows.append([Paragraph("Container Names", cell_b), Paragraph(", ".join(di.containers), cell_n)])
+        else:
+            docker_rows.append([Paragraph("Docker not installed or not running", cell_b), Paragraph("-", cell_n)])
+        elements.append(build_table(docker_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 14. Installed Applications ---
+        elements.append(Paragraph("Installed Applications", section_style))
+        app_rows = [[Paragraph("Application", cell_b), Paragraph("Version", cell_b)]]
+        if data.installed_apps:
+            for app in data.installed_apps[:100]:
+                app_rows.append([Paragraph(app.name[:60], cell_n), Paragraph(app.version or "-", cell_n)])
+            if len(data.installed_apps) > 100:
+                app_rows.append([Paragraph(f"... and {len(data.installed_apps) - 100} more", cell_n), Paragraph("", cell_n)])
+        else:
+            app_rows = [[Paragraph("No installed application data collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(app_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 15. Running Processes ---
+        elements.append(Paragraph("Running Processes", section_style))
+        proc_rows = [[Paragraph("PID", cell_b), Paragraph("Process Name", cell_b), Paragraph("User", cell_b), Paragraph("CPU%", cell_b), Paragraph("Mem%", cell_b)]]
+        if data.running_processes:
+            for proc in data.running_processes[:50]:
+                proc_rows.append([
+                    Paragraph(proc.pid, cell_n),
+                    Paragraph(proc.name, cell_n),
+                    Paragraph(proc.user, cell_n),
+                    Paragraph(proc.cpu, cell_n),
+                    Paragraph(proc.memory, cell_n),
+                ])
+        else:
+            proc_rows = [[Paragraph("No process data collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(proc_rows, col_widths=[55, 190, 100, 75, 84]))
+        elements.append(Spacer(1, 12))
+
+        # --- 16. SSL Certificates ---
+        elements.append(Paragraph("SSL Certificates", section_style))
+        cert_rows = [[Paragraph("Subject", cell_b), Paragraph("Expiry", cell_b)]]
+        if data.ssl_certificates:
+            for cert in data.ssl_certificates:
+                cert_rows.append([Paragraph(cert.subject[:60], cell_n), Paragraph(cert.expiry or "-", cell_n)])
+        else:
+            cert_rows = [[Paragraph("No SSL certificates collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(cert_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 17. Browser Extensions ---
+        elements.append(Paragraph("Browser Extensions", section_style))
+        ext_rows = [[Paragraph("Browser / Extension", cell_b), Paragraph("Version", cell_b)]]
+        if data.browser_extensions:
+            for ext in data.browser_extensions:
+                ext_rows.append([Paragraph(f"{ext.browser}: {ext.name[:50]}", cell_n), Paragraph(ext.version or "-", cell_n)])
+        else:
+            ext_rows = [[Paragraph("No browser extensions collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(ext_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 18. System Event Logs ---
+        elements.append(Paragraph("System Event Logs", section_style))
+        log_rows = [[Paragraph("Time / Source", cell_b), Paragraph("Level / Message", cell_b)]]
+        if data.event_logs:
+            for log in data.event_logs:
+                log_rows.append([Paragraph(f"{log.time}\n{log.source}", cell_n), Paragraph(f"{log.level}: {log.message[:100]}", cell_n)])
+        else:
+            log_rows = [[Paragraph("No event log data collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(log_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 19. GPU Information ---
+        elements.append(Paragraph("GPU Information", section_style))
+        gpu_rows = []
+        if data.gpu_info:
+            for gpu in data.gpu_info:
+                gpu_rows.append([Paragraph("GPU Name", cell_b), Paragraph(gpu.name or "-", cell_n)])
+                gpu_rows.append([Paragraph("Driver Version", cell_b), Paragraph(gpu.driver_version or "-", cell_n)])
+                gpu_rows.append([Paragraph("VRAM", cell_b), Paragraph(gpu.vram or "-", cell_n)])
+        else:
+            gpu_rows.append([Paragraph("No GPU data collected", cell_b), Paragraph("-", cell_n)])
+        elements.append(build_table(gpu_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 20. Battery Information ---
+        elements.append(Paragraph("Battery Information", section_style))
+        batt = data.battery_info
+        if batt and batt.name:
+            batt_rows = [
+                [Paragraph("Battery Name", cell_b), Paragraph(batt.name or "-", cell_n)],
+                [Paragraph("Status", cell_b), Paragraph(batt.status or "-", cell_n)],
+                [Paragraph("Estimated Charge", cell_b), Paragraph(batt.estimated_charge or "-", cell_n)],
+            ]
+        else:
+            batt_rows = [[Paragraph("No battery detected or not applicable", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(batt_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 21. Local Groups ---
+        elements.append(Paragraph("Local Groups", section_style))
+        grp_rows = [[Paragraph("Group Name", cell_b), Paragraph("Members", cell_b)]]
+        if data.local_groups:
+            for grp in data.local_groups:
+                grp_rows.append([Paragraph(grp.name, cell_n), Paragraph(grp.members or "-", cell_n)])
+        else:
+            grp_rows = [[Paragraph("No group data collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(grp_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 22. Startup Items ---
+        elements.append(Paragraph("Startup Items", section_style))
+        si_rows = [[Paragraph("Name", cell_b), Paragraph("Command / Location", cell_b)]]
+        if data.startup_items:
+            for si in data.startup_items:
+                si_rows.append([Paragraph(si.name[:40], cell_n), Paragraph(f"{si.command[:60]}  [{si.location}]", cell_n)])
+        else:
+            si_rows = [[Paragraph("No startup items collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(si_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 23. Network Connections ---
+        elements.append(Paragraph("Active Network Connections", section_style))
+        nc_rows = [[Paragraph("Protocol / State", cell_b), Paragraph("Local → Remote", cell_b)]]
+        if data.network_connections:
+            for nc in data.network_connections[:60]:
+                nc_rows.append([Paragraph(f"{nc.protocol} / {nc.state}", cell_n),
+                                 Paragraph(f"{nc.local_address}:{nc.local_port} → {nc.remote_address}:{nc.remote_port}", cell_n)])
+        else:
+            nc_rows = [[Paragraph("No connection data collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(nc_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 24. Routing Table ---
+        elements.append(Paragraph("Routing Table", section_style))
+        rt_rows = [[Paragraph("Destination", cell_b), Paragraph("Gateway / Interface / Metric", cell_b)]]
+        if data.routing_table:
+            for rt in data.routing_table:
+                rt_rows.append([Paragraph(rt.destination, cell_n),
+                                 Paragraph(f"{rt.gateway or '-'}  via {rt.interface or '-'}  metric {rt.metric or '-'}", cell_n)])
+        else:
+            rt_rows = [[Paragraph("No routing table data collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(rt_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 25. Filesystem Info ---
+        elements.append(Paragraph("Filesystem Information", section_style))
+        fs_rows = [[Paragraph("Device / Type / Mount", cell_b), Paragraph("Total / Used / Free / Use%", cell_b)]]
+        if data.filesystem_info:
+            for fs in data.filesystem_info:
+                fs_rows.append([Paragraph(f"{fs.device}\n{fs.fs_type}  →  {fs.mount_point}", cell_n),
+                                 Paragraph(f"{fs.total}  |  {fs.used}  |  {fs.free}  |  {fs.use_percent}", cell_n)])
+        else:
+            fs_rows = [[Paragraph("No filesystem data collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(fs_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 26. File Integrity ---
+        elements.append(Paragraph("File Integrity (SHA-256)", section_style))
+        fi_rows = [[Paragraph("File Path", cell_b), Paragraph("SHA-256 Hash / Modified", cell_b)]]
+        if data.file_integrity:
+            for fi in data.file_integrity:
+                fi_rows.append([Paragraph(fi.path, cell_n),
+                                 Paragraph(f"{fi.sha256[:32]}...\n{fi.modified}  |  {fi.size}", cell_n)])
+        else:
+            fi_rows = [[Paragraph("No file integrity data collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(fi_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 27. Process Events ---
+        elements.append(Paragraph("Process Events", section_style))
+        pe_rows = [[Paragraph("Time / User", cell_b), Paragraph("Process / Command", cell_b)]]
+        if data.process_events:
+            for pe in data.process_events:
+                pe_rows.append([Paragraph(f"{pe.time}\n{pe.user}", cell_n),
+                                 Paragraph(f"{pe.process_name}  (PID {pe.pid})\n{pe.command_line[:80]}", cell_n)])
+        else:
+            pe_rows = [[Paragraph("No process event data collected", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(pe_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 28. Security Policy ---
+        elements.append(Paragraph("Security Policy", section_style))
+        sp2 = data.security_policy
+        spol_rows = []
+        if sp2:
+            if sp2.min_password_length:   spol_rows.append([Paragraph("Min Password Length", cell_b),    Paragraph(sp2.min_password_length, cell_n)])
+            if sp2.password_complexity:   spol_rows.append([Paragraph("Password Complexity", cell_b),    Paragraph(sp2.password_complexity, cell_n)])
+            if sp2.lockout_threshold:     spol_rows.append([Paragraph("Lockout Threshold", cell_b),      Paragraph(sp2.lockout_threshold, cell_n)])
+            if sp2.screen_lock_timeout:   spol_rows.append([Paragraph("Screen Lock Timeout", cell_b),    Paragraph(sp2.screen_lock_timeout, cell_n)])
+            if sp2.auto_updates_enabled:  spol_rows.append([Paragraph("Auto Updates", cell_b),           Paragraph(sp2.auto_updates_enabled, cell_n)])
+            if sp2.remote_login_enabled:  spol_rows.append([Paragraph("Remote Login", cell_b),           Paragraph(sp2.remote_login_enabled, cell_n)])
+            if sp2.antivirus_enabled:     spol_rows.append([Paragraph("Antivirus Enabled", cell_b),      Paragraph(sp2.antivirus_enabled, cell_n)])
+            if sp2.antivirus_definitions: spol_rows.append([Paragraph("AV Definitions Updated", cell_b), Paragraph(sp2.antivirus_definitions, cell_n)])
+        if not spol_rows:
+            spol_rows.append([Paragraph("No security policy data collected", cell_b), Paragraph("-", cell_n)])
+        elements.append(build_table(spol_rows))
+        elements.append(Spacer(1, 12))
+
+        # --- 29. Container Images ---
+        elements.append(Paragraph("Container Images", section_style))
+        ci_rows = [[Paragraph("Repository : Tag", cell_b), Paragraph("Image ID / Size / Created", cell_b)]]
+        if data.container_images:
+            for ci in data.container_images:
+                ci_rows.append([Paragraph(f"{ci.repository}:{ci.tag}", cell_n),
+                                 Paragraph(f"{ci.image_id}  |  {ci.size}  |  {ci.created}", cell_n)])
+        else:
+            ci_rows = [[Paragraph("No container images found", cell_b), Paragraph("-", cell_n)]]
+        elements.append(build_table(ci_rows))
+        elements.append(Spacer(1, 12))
+
         doc.build(elements, onFirstPage=draw_page_decorations, onLaterPages=draw_page_decorations)
         logger.info(f"PDF compliance report successfully built: {pdf_path}")
     except Exception as e:
@@ -681,6 +1302,192 @@ def upload_assortment(data: AssortmentData, client_id: str = Query(...), assortm
                 ET.SubElement(p_el, "EnableBIDI").text = p.enable_bidi
                 ET.SubElement(p_el, "ExtendedPrinterStatus").text = p.extended_printer_status
                 ET.SubElement(p_el, "PortName").text = p.port_name
+
+        disk_xml = ET.SubElement(root, "DiskInfo")
+        for d in data.disk_info:
+            d_el = ET.SubElement(disk_xml, "Disk")
+            ET.SubElement(d_el, "Drive").text = d.drive
+            ET.SubElement(d_el, "Total").text = d.total
+            ET.SubElement(d_el, "Used").text = d.used
+            ET.SubElement(d_el, "Free").text = d.free
+
+        users_xml = ET.SubElement(root, "LocalUsers")
+        for u in data.local_users:
+            u_el = ET.SubElement(users_xml, "User")
+            ET.SubElement(u_el, "Name").text = u.name
+            ET.SubElement(u_el, "Enabled").text = u.enabled
+            ET.SubElement(u_el, "Admin").text = u.admin
+
+        svcs_xml = ET.SubElement(root, "RunningServices")
+        for svc in data.running_services:
+            s_el = ET.SubElement(svcs_xml, "Service")
+            ET.SubElement(s_el, "Name").text = svc.name
+            ET.SubElement(s_el, "DisplayName").text = svc.display_name
+            ET.SubElement(s_el, "StartType").text = svc.start_type
+
+        ports_xml = ET.SubElement(root, "OpenPorts")
+        for op in data.open_ports:
+            op_el = ET.SubElement(ports_xml, "Port")
+            ET.SubElement(op_el, "Port").text = op.port
+            ET.SubElement(op_el, "Protocol").text = op.protocol
+            ET.SubElement(op_el, "PID").text = op.pid
+
+        if data.security_posture:
+            sp = data.security_posture
+            sp_xml = ET.SubElement(root, "SecurityPosture")
+            ET.SubElement(sp_xml, "BitLocker").text = sp.bitlocker
+            ET.SubElement(sp_xml, "WindowsFirewall").text = sp.windows_firewall
+            ET.SubElement(sp_xml, "UACEnabled").text = sp.uac_enabled
+            ET.SubElement(sp_xml, "FileVault").text = sp.filevault
+            ET.SubElement(sp_xml, "Gatekeeper").text = sp.gatekeeper
+            ET.SubElement(sp_xml, "SIP").text = sp.sip
+            ET.SubElement(sp_xml, "AppArmor").text = sp.apparmor
+            ET.SubElement(sp_xml, "SELinux").text = sp.selinux
+
+        if data.docker_info:
+            di = data.docker_info
+            docker_xml = ET.SubElement(root, "Docker")
+            ET.SubElement(docker_xml, "Version").text = di.version
+            ET.SubElement(docker_xml, "RunningContainers").text = str(di.running_containers)
+            ctrs_xml = ET.SubElement(docker_xml, "Containers")
+            for c in di.containers:
+                ET.SubElement(ctrs_xml, "Container").text = c
+
+        apps_xml = ET.SubElement(root, "InstalledApplications")
+        for app in data.installed_apps:
+            a_el = ET.SubElement(apps_xml, "Application")
+            ET.SubElement(a_el, "Name").text = app.name
+            ET.SubElement(a_el, "Version").text = app.version
+            ET.SubElement(a_el, "Publisher").text = app.publisher
+
+        procs_xml = ET.SubElement(root, "RunningProcesses")
+        for proc in data.running_processes:
+            p_el = ET.SubElement(procs_xml, "Process")
+            ET.SubElement(p_el, "PID").text = proc.pid
+            ET.SubElement(p_el, "Name").text = proc.name
+            ET.SubElement(p_el, "CPU").text = proc.cpu
+            ET.SubElement(p_el, "Memory").text = proc.memory
+
+        ssl_xml = ET.SubElement(root, "SSLCertificates")
+        for cert in data.ssl_certificates:
+            c_el = ET.SubElement(ssl_xml, "Certificate")
+            ET.SubElement(c_el, "Subject").text = cert.subject
+            ET.SubElement(c_el, "Issuer").text = cert.issuer
+            ET.SubElement(c_el, "Expiry").text = cert.expiry
+            ET.SubElement(c_el, "Thumbprint").text = cert.thumbprint
+
+        exts_xml = ET.SubElement(root, "BrowserExtensions")
+        for ext in data.browser_extensions:
+            e_el = ET.SubElement(exts_xml, "Extension")
+            ET.SubElement(e_el, "Browser").text = ext.browser
+            ET.SubElement(e_el, "Name").text = ext.name
+            ET.SubElement(e_el, "Version").text = ext.version
+            ET.SubElement(e_el, "ExtensionID").text = ext.extension_id
+
+        logs_xml = ET.SubElement(root, "EventLogs")
+        for log in data.event_logs:
+            l_el = ET.SubElement(logs_xml, "Event")
+            ET.SubElement(l_el, "Time").text = log.time
+            ET.SubElement(l_el, "Level").text = log.level
+            ET.SubElement(l_el, "Source").text = log.source
+            ET.SubElement(l_el, "Message").text = log.message
+
+        gpu_xml = ET.SubElement(root, "GPUInfo")
+        for gpu in data.gpu_info:
+            g_el = ET.SubElement(gpu_xml, "GPU")
+            ET.SubElement(g_el, "Name").text = gpu.name
+            ET.SubElement(g_el, "DriverVersion").text = gpu.driver_version
+            ET.SubElement(g_el, "VRAM").text = gpu.vram
+
+        if data.battery_info:
+            batt_xml = ET.SubElement(root, "BatteryInfo")
+            ET.SubElement(batt_xml, "Name").text = data.battery_info.name
+            ET.SubElement(batt_xml, "Status").text = data.battery_info.status
+            ET.SubElement(batt_xml, "EstimatedCharge").text = data.battery_info.estimated_charge
+
+        grps_xml = ET.SubElement(root, "LocalGroups")
+        for grp in data.local_groups:
+            grp_el = ET.SubElement(grps_xml, "Group")
+            ET.SubElement(grp_el, "Name").text = grp.name
+            ET.SubElement(grp_el, "Description").text = grp.description
+            ET.SubElement(grp_el, "Members").text = grp.members
+
+        si_xml = ET.SubElement(root, "StartupItems")
+        for si in data.startup_items:
+            si_el = ET.SubElement(si_xml, "Item")
+            ET.SubElement(si_el, "Name").text = si.name
+            ET.SubElement(si_el, "Command").text = si.command
+            ET.SubElement(si_el, "Location").text = si.location
+            ET.SubElement(si_el, "User").text = si.user
+
+        nc_xml = ET.SubElement(root, "NetworkConnections")
+        for nc in data.network_connections:
+            nc_el = ET.SubElement(nc_xml, "Connection")
+            ET.SubElement(nc_el, "Protocol").text = nc.protocol
+            ET.SubElement(nc_el, "LocalAddress").text = nc.local_address
+            ET.SubElement(nc_el, "LocalPort").text = nc.local_port
+            ET.SubElement(nc_el, "RemoteAddress").text = nc.remote_address
+            ET.SubElement(nc_el, "RemotePort").text = nc.remote_port
+            ET.SubElement(nc_el, "State").text = nc.state
+            ET.SubElement(nc_el, "PID").text = nc.pid
+
+        rt_xml = ET.SubElement(root, "RoutingTable")
+        for rt in data.routing_table:
+            rt_el = ET.SubElement(rt_xml, "Route")
+            ET.SubElement(rt_el, "Destination").text = rt.destination
+            ET.SubElement(rt_el, "Gateway").text = rt.gateway
+            ET.SubElement(rt_el, "Interface").text = rt.interface
+            ET.SubElement(rt_el, "Metric").text = rt.metric
+
+        fs_xml = ET.SubElement(root, "FilesystemInfo")
+        for fs in data.filesystem_info:
+            fs_el = ET.SubElement(fs_xml, "Filesystem")
+            ET.SubElement(fs_el, "Device").text = fs.device
+            ET.SubElement(fs_el, "MountPoint").text = fs.mount_point
+            ET.SubElement(fs_el, "FSType").text = fs.fs_type
+            ET.SubElement(fs_el, "Total").text = fs.total
+            ET.SubElement(fs_el, "Used").text = fs.used
+            ET.SubElement(fs_el, "Free").text = fs.free
+            ET.SubElement(fs_el, "UsePercent").text = fs.use_percent
+
+        fi_xml = ET.SubElement(root, "FileIntegrity")
+        for fi in data.file_integrity:
+            fi_el = ET.SubElement(fi_xml, "File")
+            ET.SubElement(fi_el, "Path").text = fi.path
+            ET.SubElement(fi_el, "SHA256").text = fi.sha256
+            ET.SubElement(fi_el, "Size").text = fi.size
+            ET.SubElement(fi_el, "Modified").text = fi.modified
+
+        pe_xml = ET.SubElement(root, "ProcessEvents")
+        for pe in data.process_events:
+            pe_el = ET.SubElement(pe_xml, "Event")
+            ET.SubElement(pe_el, "Time").text = pe.time
+            ET.SubElement(pe_el, "PID").text = pe.pid
+            ET.SubElement(pe_el, "ParentPID").text = pe.parent_pid
+            ET.SubElement(pe_el, "ProcessName").text = pe.process_name
+            ET.SubElement(pe_el, "CommandLine").text = pe.command_line
+            ET.SubElement(pe_el, "User").text = pe.user
+
+        if data.security_policy:
+            sp2 = data.security_policy
+            sp2_xml = ET.SubElement(root, "SecurityPolicy")
+            ET.SubElement(sp2_xml, "MinPasswordLength").text = sp2.min_password_length
+            ET.SubElement(sp2_xml, "PasswordComplexity").text = sp2.password_complexity
+            ET.SubElement(sp2_xml, "LockoutThreshold").text = sp2.lockout_threshold
+            ET.SubElement(sp2_xml, "ScreenLockTimeout").text = sp2.screen_lock_timeout
+            ET.SubElement(sp2_xml, "AutoUpdatesEnabled").text = sp2.auto_updates_enabled
+            ET.SubElement(sp2_xml, "RemoteLoginEnabled").text = sp2.remote_login_enabled
+            ET.SubElement(sp2_xml, "AntivirusEnabled").text = sp2.antivirus_enabled
+            ET.SubElement(sp2_xml, "AntivirusDefinitions").text = sp2.antivirus_definitions
+
+        ci_xml = ET.SubElement(root, "ContainerImages")
+        for ci in data.container_images:
+            ci_el = ET.SubElement(ci_xml, "Image")
+            ET.SubElement(ci_el, "Repository").text = ci.repository
+            ET.SubElement(ci_el, "Tag").text = ci.tag
+            ET.SubElement(ci_el, "ImageID").text = ci.image_id
+            ET.SubElement(ci_el, "Size").text = ci.size
+            ET.SubElement(ci_el, "Created").text = ci.created
 
         tree = ET.ElementTree(root)
         tree.write(xml_path, encoding="utf-8", xml_declaration=True)
