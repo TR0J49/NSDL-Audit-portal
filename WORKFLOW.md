@@ -50,7 +50,7 @@ No manual data entry. No IT staff required on-site. Works on any platform.
 | Windows Script | PowerShell with CIM and WMI |
 | Mac and Linux Script | Bash with native system commands |
 | Session Security | SHA-256 hashed tokens, HttpOnly cookies |
-| Public URL | Cloudflare Tunnel or ngrok |
+| Tunnel / Public URL | Cloudflare Tunnel or ngrok |
 | Deployment | AWS EC2 or Local with Tunnel |
 
 ---
