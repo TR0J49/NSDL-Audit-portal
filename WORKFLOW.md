@@ -117,31 +117,6 @@ The system has three main parts working together:
 
 ## Data Flow
 
-```mermaid
-flowchart TD
-    A([User opens Portal URL]) --> B([Browser loads index.html])
-    B --> C([User enters Full Name and clicks Begin])
-    C --> D([Browser calls /download-vbs])
-    D --> E([Backend creates session with secure token])
-    E --> F([Launcher file downloads to user machine])
-    F --> G([Browser opens SSE connection to /events])
-    F --> H([User runs .bat or .sh file])
-    H --> I([Script downloads audit.ps1 or audit.sh])
-    I --> J([Collect OS and License info])
-    J --> K([Collect Network and Adapter info])
-    K --> L([Collect Hardware and System info])
-    L --> M([Collect Printers, Hotfixes, Antivirus])
-    M --> N([Script uploads JSON to /upload-assortment])
-    N --> O([Backend validates token])
-    O --> P([Backend generates PDF and XML report])
-    P --> Q([Session status updated to completed])
-    Q --> R([SSE pushes completed event to browser])
-    G --> R
-    R --> S([Browser shows Collection Complete])
-    S --> T([User clicks Download PDF or XML])
-    T --> U([Report downloaded successfully])
-```
-
 The following steps happen in order when a user runs a collection:
 
 **Step 1** — User opens the portal URL in their browser
