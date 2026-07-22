@@ -93,7 +93,7 @@ try {
     foreach ($nc in $netConfigs) {
         $ipv4    = ($nc.IPAddress | Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' } | Select-Object -First 1)
         $mask    = ($nc.IPSubnet  | Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' } | Select-Object -First 1)
-        $gateway = if ($nc.DefaultIPGateway)      { $nc.DefaultIPGateway[0] }          else { "" }
+        $gateway = if ($nc.DefaultIPGateway)      { $nc.DefaultIPGateway[0] }           else { "" }
         $dns     = if ($nc.DNSServerSearchOrder)  { $nc.DNSServerSearchOrder -join ", " } else { "" }
         $ipv6Permanent = ""; $ipv6Temp = ""; $ipv6LinkLocal = ""
         try {
